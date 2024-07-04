@@ -1,0 +1,2291 @@
+---
+title: "Double-edged effect of enviornmental flucutuation
+aurhot: Shota Shibasaki"
+output: html_notebook
+---
+
+# Experimental data analysis
+
+## Population dynamics for 3 monthes
+```{r evolutionary experiments}
+library(ggplot2)
+library(patchwork)
+library(rstatix) # for wilcoxon rank sum and its effect size
+library(xtable) # latex table generation
+
+# The colorblind-safe palette with black:
+cbbPalette =c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+scientific_notation <- function(x) {
+     x <- format(x, scientific = TRUE)
+     x <- gsub("^(.*)e", "'\\1'e", x)
+     x <- gsub("e", "%*%10^", x)
+     x <- gsub('\\+', '', x)
+     parse(text = x)
+}
+df=read.csv("CellCount.csv")
+
+g=ggplot(df, aes(x=Time, y=Mean, group=ID))+ 
+geom_line(aes(color=Condition))+
+geom_point(aes(color=Condition), size=3, alpha=0.2)+
+ylab('Cells (/ml)')+xlab('Time (week)')+
+geom_errorbar(aes(ymin = Mean - S.E., ymax = Mean + S.E., 
+                  color=Condition),width = .05, alpha=0.2)+
+  scale_y_continuous(trans='log10', labels = scientific_notation)+
+  scale_colour_manual(values=cbbPalette,                     
+                      labels=unname(TeX(c("Control", "$\\sigma=0.00$",
+                              "$\\sigma=0.025$","$\\sigma=0.100$"))))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.text=element_text(size=18),
+        legend.title = element_text(size=0),
+        legend.position="top"
+        )+
+  scale_x_continuous(breaks=c(0,7, 14, 21, 28, 35, 42, 49, 56,
+                              63, 70, 77),
+                     labels=c("1", "2", "3", "4",
+                              "5", "6", "7", "8",
+                              "9", "10", "11", "12"
+                              ))
+
+
+week_list=seq(1, 12, 1)
+id_list=unique(df$ID)
+df_cond=read.csv("ER_Salinity.csv")
+week_ret=c()
+id_ret=c()
+cond_ret=c()
+mu_ret=c()
+nacl_ret=c()
+for (i in 1:length(week_list)){
+  week=week_list[i]
+  
+  for (j in 1:length(id_list)){
+    id=id_list[j]
+    condition=df[df$Week==week & df$ID==id & df$Day==0,]$Condition
+    #We can estimate the growth rate from the exponential curve
+    d=df[df$Week==week& df$ID==id, ]
+    d_new=data.frame(Count=c(d$Count1, d$Count2, d$Count3), Day=d$Day) # use all samples
+    model=nls(Count ~ const*exp(Day*mu), data=d_new, 
+     start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
+    mu=summary(model)$coefficients[2]
+    
+    week_ret=c(week_ret, week)
+    id_ret=c(id_ret, id)
+    cond_ret=c(cond_ret, condition)
+    mu_ret=c(mu_ret, mu)
+    nacl_ret=c(nacl_ret, df_cond[df_cond$Condition==condition & df_cond$Week==week,]$NaCl)
+    
+  }
+}
+data_parm=data.frame(Week=week_ret,
+                     ID=id_ret,
+                     Condition=cond_ret,
+                     Mu=mu_ret,
+                     NaCl=nacl_ret)
+
+data_lin=data_parm[data_parm$Condition=='Linear', ]
+data_025=data_parm[data_parm$Condition=='SD025', ]
+data_100=data_parm[data_parm$Condition=='SD100', ]
+salinity=unique(data_lin$NaCl) # we omit NaCl =0M (control)
+W_list=c()
+p_list=c()
+alt_list=c()
+pair_list=c()
+effsize_list=c()
+salt_list=c()
+
+#========= Linear vs SD100 ==================
+d=rbind(data_lin, data_100)
+for(salt in salinity){
+  if (median(data_lin[data_lin$NaCl==salt, ]$Mu)> median(data_100[data_100$NaCl==salt, ]$Mu)){
+   W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "greater")
+   w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "greater")$effsize
+   alt_list=append(alt_list, "greater")
+   }else{
+    W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "less")
+    w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "less")$effsize
+     alt_list=append(alt_list, "less")
+  }
+  W_list=append(W_list, W$statistic)
+  p_list=append(p_list, W$p)
+  
+  pair_list=append(pair_list, "Linear-SD100")
+  effsize_list=append(effsize_list, w_effect)
+  salt_list=append(salt_list, salt)
+}
+
+#========= Linear vs SD025 ==================
+
+d=rbind(data_lin, data_025)
+salinity=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+for(salt in salinity){
+  if (median(data_lin[data_lin$NaCl==salt, ]$Mu)> median(data_025[data_025$NaCl==salt, ]$Mu)){
+   W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "greater")
+   w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "greater")$effsize
+   alt_list=append(alt_list, "greater")
+   }else{
+    W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "less")
+    w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "less")$effsize
+     alt_list=append(alt_list, "less")
+  }
+  W_list=append(W_list, W$statistic)
+  p_list=append(p_list, W$p)
+  
+  pair_list=append(pair_list, "Linear-SD025")
+  effsize_list=append(effsize_list, w_effect)
+  salt_list=append(salt_list, salt)
+}
+
+#========= Linear vs SD025 ==================
+
+d=rbind(data_025, data_100)
+salinity=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+for(salt in salinity){
+  if (median(data_025[data_025$NaCl==salt, ]$Mu)> median(data_100[data_100$NaCl==salt, ]$Mu)){
+   W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "greater")
+   w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "greater")$effsize
+   alt_list=append(alt_list, "greater")
+   }else{
+    W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "less")
+    w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "less")$effsize
+     alt_list=append(alt_list, "less")
+  }
+  W_list=append(W_list, W$statistic)
+  p_list=append(p_list, W$p)
+  
+  pair_list=append(pair_list, "SD025-SD100")
+  effsize_list=append(effsize_list, w_effect)
+  salt_list=append(salt_list, salt)
+}
+
+p.corr= p.adjust(p_list, method = "BH") # FDR correction
+df_stat=data.frame(Pairs=pair_list,
+                   Salinity=salt_list,
+                   Alt.Hypo=alt_list,
+                   W=W_list,
+                   #P.val=p_list,
+                   P.FDR=p.corr,
+                   Significance=p.corr<0.05,
+                   EffectSize=effsize_list)
+control_median=median(data_parm[data_parm$Condition=='Control', ]$Mu) # Median growth rate of controls
+#------------
+q1=ggplot(data_parm[data_parm$Condition=='Control', ], aes(y=Mu))+geom_density(color='black')+
+  ylab('Growth rate (/day)')+xlab('Density')+
+   ylim(c(-0.05, 1.0))+
+  geom_hline(yintercept=control_median, linetype="dashed")+
+  geom_text(x=3.25, y=1, label='Control', size=6)+
+ theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+
+q2=ggplot(data_parm[data_parm$Condition=='Linear', ], aes(x=NaCl, y=Mu, color="#E69F00"))+ 
+   geom_line(color="#E69F00",aes(group=ID))+
+geom_point(color="#E69F00", size=3, alpha=0.2)+
+  geom_hline(yintercept=control_median, linetype="dashed")+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('')+xlab('')+
+  annotate('text', x=0.4, y=1, label=TeX("$\\sigma=0.000$"), color="#E69F00", size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+ scale_x_continuous(breaks=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 0),
+        axis.title.y = element_text(size = 0)
+        )
+
+q3=ggplot(data_parm[data_parm$Condition=='SD025', ], aes(x=NaCl, y=Mu, color="#56B4E9"))+ 
+   geom_line(aes(group=ID), color="#56B4E9")+
+geom_point(color="#56B4E9", size=3, alpha=0.2)+
+  geom_hline(yintercept=control_median, linetype="dashed")+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('Growth rate (/day)')+xlab('NaCl (M)')+
+  annotate('text', x=0.4, y=1,  label=TeX("$\\sigma=0.025$"), color="#56B4E9",size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+        
+d1=df_stat[df_stat$Pairs=='Linear-SD025', ]
+for(salt in unique(d1$Salinity)){
+  if(d1[d1$Salinity==salt, ]$Significance == TRUE){
+    if(d1[d1$Salinity==salt, ]$Alt.Hypo == "greater"){
+      q3=q3+annotate('text', x=salt, y=1, label='<', color="#E69F00", size=4) # growth rate of linear is higher than SD025
+    }else{
+      q3=q3+annotate('text', x=salt, y=1, label='>', color="#E69F00", size=4)
+    }
+  }
+}
+
+q4=ggplot(data_parm[data_parm$Condition=='SD100', ], aes(x=NaCl, y=Mu, color="#009E73"))+ 
+   geom_line(color="#009E73",aes(group=ID))+
+geom_point(color="#009E73", size=3, alpha=0.2)+
+  geom_hline(yintercept=control_median, linetype="dashed")+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('')+xlab('NaCl (M)')+
+   annotate('text', x=0.4, y=1,  label=TeX("$\\sigma=0.100$"), color="#009E73", size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 0)
+        )
+d2=df_stat[df_stat$Pairs=='Linear-SD100', ]
+for(salt in unique(d2$Salinity)){
+  if(d2[d2$Salinity==salt, ]$Significance == TRUE){
+    if(d2[d2$Salinity==salt, ]$Alt.Hypo == "greater"){
+      q4=q4+annotate('text', x=salt, y=1, label='<', color="#E69F00", size=4) # growth rate of linear is higher than SD100
+    }else{
+      q4=q4+annotate('text', x=salt, y=1, label='>', color="#E69F00", size=4)
+    }
+  }
+}
+d3=df_stat[df_stat$Pairs=='SD025-SD100', ]
+for(salt in unique(d3$Salinity)){
+  if(d3[d3$Salinity==salt, ]$Significance == TRUE){
+    if(d3[d3$Salinity==salt, ]$Alt.Hypo == "greater"){
+      q4=q4+annotate('text', x=salt, y=0.9, label='<', color="#56B4E9", size=4) # growth rate of SD025 is higher than SD100
+    }else{
+      q4=q4+annotate('text', x=salt, y=0.9, label='>', color="#56B4E9", size=4)
+    }
+  }
+}
+q=g+(q1+q2+q3+q4)+plot_layout(nrow=2)+plot_annotation(tag_levels = "A") & 
+                                            theme(plot.tag = element_text(size = 20))
+ggsave('evolutionary_experiments.pdf', width = 9, height = 12, dpi = 300,)
+print(q)
+
+xtable(df_stat)
+```
+Below, we calculate the growth rate from the population dynamics
+
+```{r generation time}
+df=read.csv("CellCount.csv")
+IDs=unique(df$ID)
+Weeks=unique(df$Week)
+id_list=c()
+week_list=c()
+generation_list=c()
+for(id in IDs){
+  G=0
+  for(week in Weeks){
+    id_list=c(id_list, id)
+    week_list=c(week_list, week)
+    N_end=df[df$Week==week & df$ID==id & df$Day==7, ]$Mean
+    N_init=df[df$Week==week & df$ID==id & df$Day==0, ]$Mean
+   G=7/(log10(N_end/N_init)/log10(2))
+   generation_list=c(generation_list, G)
+  }
+  
+}
+df_generation=data.frame(
+  ID=id_list,
+  Week=week_list,
+  Gen_time=generation_list
+)
+
+library(ggplot2)
+ggplot(df_generation, aes(Week, ID, fill= Gen_time)) + 
+  geom_tile(color = "white")+ylab('Lines')+xlab('Time (week)')+
+  scale_x_continuous(breaks=c(1, 3,5,7,9,11))+
+  labs(fill='Generation \n time (day)')+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+ggsave('Generation_time.pdf')
+write.csv(df_generation, 'Generation_time.csv')
+
+# show how many generation algae spent in total
+gen=c()
+for (i in unique(df_generation$ID)){
+     gen=c(gen, sum(7/filter(df_generation, df_generation$ID==i)$Gen_time))
+}
+d_gen=data.frame(ID=unique(df_generation$ID), Generation=gen)
+print(d_gen)
+```
+
+
+
+## Assay in 1M 
+```{r Assay to 1M}
+
+library(ggplot2)
+library(patchwork)
+library(rstatix) 
+library(latex2exp)
+library(ggsignif)
+# The colorblind-safe palette with black:
+cbbPalette =c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbbPalette2=c( "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+scientific_notation <- function(x) {
+     x <- format(x, scientific = TRUE)
+     x <- gsub("^(.*)e", "'\\1'e", x)
+     x <- gsub("e", "%*%10^", x)
+     x <- gsub('\\+', '', x)
+     parse(text = x)
+}
+df=read.csv("Assay_Lethal_Salt - 1M_NaCl.csv")
+
+#======Growth in 1M==========
+ID=unique(df$ID)
+time=unique(df$Day)
+Condition=df[df$Day==time[1], ]$Condition
+Fold=df[df$Day==time[length(time)], ]$Mean/df[df$Day==time[1], ]$Mean # relative chage
+mu_list=c()
+const_list=c()
+for (id in unique(df$ID)){
+  d=df[df$ID==id, ]
+  d_new=data.frame(Count=c(d$Count1, d$Count2, d$Count3), Day=d$Day) # use all samples
+  model=nls(Count ~ const*exp(Day*mu), data=d_new, 
+     start=c(const=df[df$ID==id & df$Day==0,]$Mean, mu=0.6))
+   const=summary(model)$coefficients[1]
+   mu=summary(model)$coefficients[2]
+   mu_list=append(mu_list, mu)
+   const_list=append(const_list, const)
+}
+
+
+df_new=data.frame(ID=ID,
+                  Condition=Condition,
+                  Fold=Fold,
+                  Mu=mu_list,
+                  Const=const_list)
+
+
+#----------------- Plot growth in 1M -----------
+q1=ggplot(df[df$Condition=='Control', ], aes(x=Day, y=Mean, gourp=ID),  color="black")+
+geom_point(color='black', size=3, alpha=0.2)+
+   geom_line(color='black',aes(group=ID))+
+ylab('Cells (/ml)')+xlab('Time (day)')+
+geom_errorbar(aes(ymin = Mean - S.E., ymax = Mean + S.E.), color='black', width = .05, alpha=0.2)+
+  scale_y_continuous(limits=c(0, 8*10^5),labels = scientific_notation)+
+  annotate('text', x=3, y=7*10^5, label='Control', color="black", size=6)+
+  scale_colour_manual(values=cbbPalette)+
+  geom_hline(yintercept=1*10**5, linetype='dotted', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 0),
+        axis.title.y = element_text(size = 18)
+        )+
+stat_function(fun=function(x)  df_new$Const[1]*exp(df_new$Mu[1]*x), 
+                color="black",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[2]*exp(df_new$Mu[2]*x),
+                color="black",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[3]*exp(df_new$Mu[3]*x),
+                color="black",linetype='dashed')
+
+q2=ggplot(df[df$Condition=='Linear', ], aes(x=Day, y=Mean, gourp=ID), color="#E69F00")+ 
+  geom_point(color='#E69F00', size=3, alpha=0.2)+
+   geom_line(color='#E69F00',aes(group=ID))+
+ylab('Cells (/ml)')+xlab('Time (day)')+
+geom_errorbar(aes(ymin = Mean - S.E., ymax = Mean + S.E.), color='#E69F00', width = .05, alpha=0.2)+
+   ylim(c(0, 8*10^5))+
+   annotate('text', x=3, y=7*10^5, label=TeX("$\\sigma=0.000$"), color="#E69F00", size=6)+
+  scale_y_continuous(limits=c(0, 8*10^5),labels = scientific_notation)+
+  scale_colour_manual(values=cbbPalette)+
+  geom_hline(yintercept=1*10**5, linetype='dotted', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 0),
+        axis.title.y = element_text(size = 0)
+        )+
+stat_function(fun=function(x)  df_new$Const[4]*exp(df_new$Mu[4]*x), 
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[5]*exp(df_new$Mu[5]*x),
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[6]*exp(df_new$Mu[6]*x),
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[7]*exp(df_new$Mu[7]*x),
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[8]*exp(df_new$Mu[8]*x),
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[9]*exp(df_new$Mu[9]*x),
+                color="#E69F00",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[10]*exp(df_new$Mu[10]*x),
+                color="#E69F00",linetype='dashed')
+
+q3=ggplot(df[df$Condition=='SD025', ], aes(x=Day, y=Mean, gourp=ID), color="#56B4E9")+ 
+  geom_point(color="#56B4E9", size=3, alpha=0.2)+
+  geom_line(color="#56B4E9",aes(group=ID))+
+ylab('Cells (/ml)')+xlab('Time (day)')+
+geom_errorbar(aes(ymin = Mean - S.E., ymax = Mean + S.E.), color="#56B4E9", width = .05, alpha=0.2)+
+   ylim(c(0, 8*10^5))+
+  annotate('text', x=3, y=7*10^5, label=TeX("$\\sigma=0.025$"), color="#56B4E9", size=6)+
+ scale_y_continuous(limits=c(0, 8*10^5),labels = scientific_notation)+
+  scale_colour_manual(values=cbbPalette)+
+  geom_hline(yintercept=1*10**5, linetype='dotted', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )+
+stat_function(fun=function(x)  df_new$Const[11]*exp(df_new$Mu[11]*x), 
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[12]*exp(df_new$Mu[12]*x),
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[13]*exp(df_new$Mu[13]*x),
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[14]*exp(df_new$Mu[14]*x),
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[15]*exp(df_new$Mu[15]*x),
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[16]*exp(df_new$Mu[16]*x),
+                color="#56B4E9",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[17]*exp(df_new$Mu[17]*x),
+                color="#56B4E9",linetype='dashed')
+
+q4=ggplot(df[df$Condition=='SD100', ], aes(x=Day, y=Mean, gourp=ID), color="#009E73")+ 
+  geom_point(color="#009E73", size=3, alpha=0.2)+
+  geom_line(color="#009E73",aes(group=ID))+
+ylab('Cells (/ml)')+xlab('Time (day)')+
+geom_errorbar(aes(ymin = Mean - S.E., ymax = Mean + S.E.), color="#009E73", width = .05, alpha=0.2)+
+   ylim(c(0, 8*10^5))+
+  annotate('text', x=3, y=7*10^5, label=TeX("$\\sigma=0.100$"), color="#009E73", size=6)+
+  scale_y_continuous(limits=c(0, 8*10^5),labels = scientific_notation)+
+  scale_colour_manual(values=cbbPalette)+
+  geom_hline(yintercept=1*10**5, linetype='dotted', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 0)
+        )+
+  stat_function(fun=function(x)  df_new$Const[18]*exp(df_new$Mu[18]*x), 
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[19]*exp(df_new$Mu[19]*x),
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[20]*exp(df_new$Mu[20]*x),
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[21]*exp(df_new$Mu[21]*x),
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[22]*exp(df_new$Mu[22]*x),
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[23]*exp(df_new$Mu[23]*x),
+                color="#009E73",linetype='dashed')+
+  stat_function(fun=function(x)  df_new$Const[24]*exp(df_new$Mu[24]*x),
+                color="#009E73",linetype='dashed')
+
+
+
+
+
+
+# Stat test
+#stat=games_howell_test(df_new, Fold ~ Condition, conf.level = 0.95, detailed = FALSE)
+# assuming normal distribution without homogenuity
+# see https://aaronschlegel.me/games-howell-post-hoc-multiple-comparisons-test-python.html#:~:text=The%20Games%2DHowell%20test%20is,variances%20or%20equal%20sample%20sizes.
+# wilcox and FDR
+group1=c("Control", "Control", "Control", 
+         "Linear", "Linear", "SD025")
+group2=c("Linear", "SD025", "SD100",
+         "SD025", "SD100", "SD100")
+alternative=c("less", "less", "less", 
+              "greater", "less", "less")
+p_list=c()
+effsize_list=c()
+W_list=c()
+for(i in 1:length(group1)){
+   W=wilcox_test(Fold~ Condition, #Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])
+  # print(W)
+   w_effect=wilcox_effsize(Fold~ Condition, #Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])$effsize
+   W_list=append(W_list, W$statistic)
+   p_list=append(p_list, W$p)
+   effsize_list=append(effsize_list, w_effect)
+}
+p.corr= p.adjust(p_list, method = "BH") # FDR correction # FDR correction
+signif=c()
+for(i in 1:length(p.corr)){
+  if(p.corr[i]<0.05){
+    signif=append(signif, "*")
+  }
+  else{
+    signif=append(signif, "n.s.")
+  }
+}
+stat1=data.frame(group1=group1,
+                   group2=group2,
+                   W=W_list,
+                   #P.val=p_list,
+                   P.FDR=p.corr,
+                   p.adj.signif=signif,
+                   EffectSize=effsize_list)
+
+#-------------- Growth rate Mu comparison -------------
+group1=c("Control", "Control", "Control", 
+         "Linear", "Linear", "SD025")
+group2=c("Linear", "SD025", "SD100",
+         "SD025", "SD100", "SD100")
+alternative=c("less", "less", "less", 
+              "greater", "less", "less")
+p_list=c()
+effsize_list=c()
+W_list=c()
+for(i in 1:length(group1)){
+   W=wilcox_test(Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])
+  # print(W)
+   w_effect=wilcox_effsize(Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])$effsize
+   W_list=append(W_list, W$statistic)
+   p_list=append(p_list, W$p)
+   effsize_list=append(effsize_list, w_effect)
+}
+p.corr= p.adjust(p_list, method = "BH") # FDR correction # FDR correction
+signif=c()
+for(i in 1:length(p.corr)){
+  if(p.corr[i]<0.05){
+    signif=append(signif, "*")
+  }
+  else{
+    signif=append(signif, "n.s.")
+  }
+}
+stat2=data.frame(group1=group1,
+                   group2=group2,
+                   W=W_list,
+                   #P.val=p_list,
+                   P.FDR=p.corr,
+                   p.adj.signif=signif,
+                   EffectSize=effsize_list)
+
+f=ggplot(df_new[df_new$Condition != 'Control', ], aes(x=Condition, y=Mu, color=Condition))+
+  geom_jitter(size=3, alpha=0.8, width=0.1, height=0)+
+  xlab('Condition')+ylab('Growth rate (/day)')+
+  ylim(c(-0.03, 0.085))+
+  scale_colour_manual(values=cbbPalette2)+
+  scale_x_discrete(labels=c(TeX("$\\sigma=0.000$"),
+                            TeX("$\\sigma=0.025$"), TeX("$\\sigma=0.000$")))+
+  geom_hline(yintercept=0, linetype='dashed', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none"
+        )
+#mannually add stat significance
+ypos=c(0,0,0, 0.05, 0.077, 0.07)
+for(i in 4:nrow(stat2)){
+  f=f+ geom_signif( y_position=ypos[i],
+    comparisons = list(c(stat2$group1[i], stat2$group2[i])),
+    annotation = stat2$p.adj.signif[i],
+    color='black', textsize=8
+    )
+}
+q=f+(q1+q2+q3+q4)+plot_layout(nrow=2)+plot_annotation(tag_levels = "A") & 
+                                            theme(plot.tag = element_text(size = 20))
+ggsave('Rescue_lethal_summary.pdf', width = 9, height = 13, dpi = 300)
+xtable(stat2)
+```
+
+# Mathematical model
+
+## Define the dynamics and show simple examples
+```{r oligomorphic dynamics}
+Oligomorphic = function(t, state, parms){
+  
+  with(as.list(c(state, parms)), {
+    alpha=alpha_0*exp(-w*s)
+    growth= alpha*exp(-beta*(Z_mean-s)^2)-gamma
+    gradient= 2*alpha*beta*(s-Z_mean)*exp(-beta*(Z_mean-s)^2)
+    second_diff=2*alpha*beta*(2*beta*(Z_mean-s)^2-1)*exp(-beta*(Z_mean-s)^2)
+    
+    dN = N*(growth-a*N-Z_var/2*second_diff)
+    dZ_mean=Z_var*gradient
+    dZ_var = Z_var^2*second_diff+N*mu*sigma^2
+    
+    list(c(dN, dZ_mean, dZ_var))
+  })
+}
+
+library(deSolve)
+
+#test
+init=c(N=10000, Z_mean=0.01, Z_var=1e-4)
+parms=c(alpha_0=1.2, beta=100, gamma=0.3, w=0.05, s=0.15, mu=1e-6, sigma=1e-2, a=1e-5)
+times =seq(0, 75, 0.01)
+out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+plot(out)
+```
+
+# Parameter sweep under flucutuations corresponding to the experimental scenarios
+```{r parameter sweep 1}
+number_replicate=10000
+alpha_0=runif(number_replicate, min=0.5, max=2.5)
+beta=runif(number_replicate, min=30, 150)
+gamma=runif(number_replicate, min=0.1, max=0.4)
+w=runif(number_replicate, min=0.001, max=0.4)
+a=runif(number_replicate, 1e-6, 1e-4)
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+Tf=50
+
+Long_Dynamics=function(y0, Tf, parms, salt_stress){
+  for (salt in salt_stress){
+    times =seq(0, Tf, 0.01)
+    out =ode(y = y0, times = times, func = Oligomorphic, 
+             parms = c(parms, s=salt, mu=1e-6, sigma=1e-2))
+    last=tail(data.frame(out),1)
+    y0=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  return(data.frame(last[2:length(last)]))
+}
+for(n in 1:number_replicate){
+  if(n%%1000==0){
+    print(n)
+  }
+   parms=c(alpha_0=alpha_0[n],
+           beta=beta[n], 
+           gamma=gamma[n], 
+           w=w[n],
+           a=a[n])
+  final_state_Linear=Long_Dynamics(init, Tf, parms, salt_Linear)
+  final_state_SD025=Long_Dynamics(init, Tf, parms, salt_SD025)
+  final_state_SD100=Long_Dynamics(init, Tf, parms, salt_SD100)
+  ans=c(
+       parms,
+        N_Lin=final_state_Linear[1],
+         Mean_Lin=final_state_Linear[2],
+         Var_Lin=final_state_Linear[3],
+        N_SD025=final_state_SD025[1],
+         Mean_SD025=final_state_SD025[2],
+         Var_SD025=final_state_SD025[3],
+         N_SD100=final_state_SD100[1],
+         Mean_SD100=final_state_SD100[2],
+         Var_SD100=final_state_SD100[3]
+                  )
+  if(n==1){
+   df=data.frame(ans)
+  }
+  else{
+    df=rbind(df, ans)
+  }
+}
+df=format(round(df, 6), 6) # omit too small values
+write.csv(df, "ER_model_parameter_sweep.csv")
+```
+# other enviornmental flucutuations
+```{r Run other scenarios}
+salt_SD050=c(0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.6)
+salt_SD075=c(0.125, 0.1, 0.075, 0.2, 0.325, 0.3, 0.275, 0.4, 0.525, 0.5, 0.475, 0.6)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+Tf=50
+# read parameters from parameter sweeop
+df=read.csv("ER_model_parameter_sweep.csv")
+
+
+# run three scenarios
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+number_replicate=nrow(df)
+
+Long_Dynamics=function(y0, Tf, parms, salt_stress){
+  for (salt in salt_stress){
+    times =seq(0, Tf, 0.01)
+    out =ode(y = y0, times = times, func = Oligomorphic, 
+             parms = c(parms, s=salt, mu=1e-6, sigma=1e-2))
+    last=tail(data.frame(out),1)
+    y0=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  return(data.frame(last[2:length(last)]))
+}
+for(n in 1:number_replicate){
+  if(n%%1000==0){
+    print(n)
+  }
+   parms=c(alpha_0=alpha_0[n],
+           beta=beta[n], 
+           gamma=gamma[n], 
+           w=w[n],
+           a=a[n])
+  final_state_SD050=Long_Dynamics(init, Tf, parms, salt_SD050)
+  final_state_SD075=Long_Dynamics(init, Tf, parms, salt_SD075)
+  final_state_SD125=Long_Dynamics(init, Tf, parms, salt_SD125)
+  ans=c(
+       parms,
+        N_SD050=final_state_SD050[1],
+         Mean_SD050=final_state_SD050[2],
+         Var_SD050=final_state_SD050[3],
+        N_SD075=final_state_SD075[1],
+         Mean_SD075=final_state_SD075[2],
+         Var_SD075=final_state_SD075[3],
+         N_SD125=final_state_SD125[1],
+         Mean_SD125=final_state_SD125[2],
+         Var_SD125=final_state_SD125[3]
+                  )
+  if(n==1){
+   df_new=data.frame(ans)
+  }
+  else{
+    df_new=rbind(df_new, ans)
+  }
+}
+d=cbind(df, df_new)
+write.csv(d, "ER_model_parameter_sweep2.csv")
+```
+
+## analysis of the parameter sweep
+
+First we plot the probability of evolutionary rescue
+```{r Plot ER simulations}
+library(ggplot2)
+library(patchwork)
+library(nclbayes)
+library(latex2exp)
+library(dplyr)
+library(deSolve)
+
+df=read.csv("ER_model_parameter_sweep2.csv")
+threshold=10 # the result seems to be robust
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+summary(glm(Probability~SD, d_plot, family='binomial'))
+
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+df_new=data.frame(
+  ID=rep(1:nrow(df), 6),
+  SD=c(rep(0, nrow(df)), rep(0.025, nrow(df)), rep(0.05, nrow(df)),
+       rep(0.075, nrow(df)), rep(0.1, nrow(df)), rep(0.125, nrow(df))),
+  ER=c(df$Lin_rescue, df$SD025_rescue,df$SD050_rescue,  
+       df$SD075_rescue, df$SD100_rescue, df$SD125_rescue))
+df_new=df_new*1
+
+# We calculate how often increasing SD change ER results (i.e., conditional probabilities)
+# negative: prob of (Success -> Fail)/(Success) 
+# positive: prob of (Failure -> Success)/(Failure) 
+
+prob_negative=c(nrow(filter(df, Lin_rescue==TRUE & SD025_rescue==FALSE))/
+                nrow(filter(df, Lin_rescue==TRUE)),
+                nrow(filter(df, SD025_rescue==TRUE & SD050_rescue==FALSE))/
+                nrow(filter(df, SD025_rescue==TRUE)),
+                nrow(filter(df, SD050_rescue==TRUE & SD075_rescue==FALSE))/
+                nrow(filter(df, SD050_rescue==TRUE)),
+                nrow(filter(df, SD075_rescue==TRUE & SD100_rescue==FALSE))/
+                nrow(filter(df, SD075_rescue==TRUE)),
+                nrow(filter(df, SD100_rescue==TRUE & SD125_rescue==FALSE))/
+                nrow(filter(df, SD100_rescue==TRUE))
+)
+
+neg_HDI_Lin=hdiBeta(p = 0.95, nrow(filter(df, Lin_rescue==TRUE & SD025_rescue==FALSE))+1, nrow(filter(df, Lin_rescue==TRUE))- nrow(filter(df, Lin_rescue==TRUE & SD025_rescue==FALSE))+1)
+neg_HDI_025=hdiBeta(p = 0.95, nrow(filter(df, SD025_rescue==TRUE & SD050_rescue==FALSE))+1, nrow(filter(df, SD025_rescue==TRUE))- nrow(filter(df, SD025_rescue==TRUE & SD050_rescue==FALSE))+1)
+neg_HDI_050=hdiBeta(p = 0.95, nrow(filter(df, SD050_rescue==TRUE & SD075_rescue==FALSE))+1, nrow(filter(df, SD050_rescue==TRUE))- nrow(filter(df, SD050_rescue==TRUE & SD075_rescue==FALSE))+1)
+neg_HDI_075=hdiBeta(p = 0.95, nrow(filter(df, SD075_rescue==TRUE & SD100_rescue==FALSE))+1, nrow(filter(df, SD075_rescue==TRUE))- nrow(filter(df, SD075_rescue==TRUE & SD100_rescue==FALSE))+1)
+neg_HDI_100=hdiBeta(p = 0.95, nrow(filter(df, SD100_rescue==TRUE & SD125_rescue==FALSE))+1, nrow(filter(df, SD100_rescue==TRUE))- nrow(filter(df, SD100_rescue==TRUE & SD125_rescue==FALSE))+1)
+
+
+prob_positive=c(nrow(filter(df, Lin_rescue==FALSE & SD025_rescue==TRUE))/
+                nrow(filter(df, Lin_rescue==FALSE)),
+                nrow(filter(df, SD025_rescue==FALSE & SD050_rescue==TRUE))/
+                nrow(filter(df, SD025_rescue==FALSE)),
+                nrow(filter(df, SD050_rescue==FALSE & SD075_rescue==TRUE))/
+                nrow(filter(df, SD050_rescue==FALSE)),
+                nrow(filter(df, SD075_rescue==FALSE & SD100_rescue==TRUE))/
+                nrow(filter(df, SD075_rescue==FALSE)),
+                nrow(filter(df, SD100_rescue==FALSE & SD125_rescue==TRUE))/
+                nrow(filter(df, SD100_rescue==FALSE))
+)
+
+pos_HDI_Lin=hdiBeta(p = 0.95, nrow(filter(df, Lin_rescue==FALSE & SD025_rescue==TRUE))+1, nrow(filter(df, Lin_rescue==FALSE))- nrow(filter(df, Lin_rescue==FALSE & SD025_rescue==TRUE))+1)
+pos_HDI_025=hdiBeta(p = 0.95, nrow(filter(df, SD025_rescue==FALSE & SD050_rescue==TRUE))+1, nrow(filter(df, SD025_rescue==FALSE))- nrow(filter(df, SD025_rescue==FALSE & SD050_rescue==TRUE))+1)
+pos_HDI_050=hdiBeta(p = 0.95, nrow(filter(df, SD050_rescue==FALSE & SD075_rescue==TRUE))+1, nrow(filter(df, SD050_rescue==FALSE))- nrow(filter(df, SD050_rescue==FALSE & SD075_rescue==TRUE))+1)
+pos_HDI_075=hdiBeta(p = 0.95, nrow(filter(df, SD075_rescue==FALSE & SD100_rescue==TRUE))+1, nrow(filter(df, SD075_rescue==FALSE))- nrow(filter(df, SD075_rescue==FALSE& SD100_rescue==TRUE))+1)
+pos_HDI_100=hdiBeta(p = 0.95, nrow(filter(df, SD100_rescue==FALSE & SD125_rescue==TRUE))+1, nrow(filter(df, SD100_rescue==FALSE))- nrow(filter(df, SD100_rescue==FALSE & SD125_rescue==TRUE))+1)
+
+prob_newtral=1-(prob_positive+prob_negative)
+
+
+
+df_prob=data.frame(Probability=c(prob_positive, prob_negative),
+                  Label=c(rep('Failure to success',5), rep('Success to failure', 5)),
+                  Scenario=rep(c('From 0 to 0.025', 'From 0.025 to 0.05', 'From 0.05 to 0.075', 'From 0.075 to 0.1', 'From 0.1 to 0.125'), 2),
+                  Low=c(pos_HDI_Lin[1], pos_HDI_025[1], pos_HDI_050[1], pos_HDI_075[1], pos_HDI_100[1],
+                        neg_HDI_Lin[1], neg_HDI_025[1], neg_HDI_050[1], neg_HDI_075[1], neg_HDI_100[1]),
+                  High=c(pos_HDI_Lin[2], pos_HDI_025[2], pos_HDI_050[2], pos_HDI_075[2], pos_HDI_100[2],
+                        neg_HDI_Lin[2], neg_HDI_025[2], neg_HDI_050[2], neg_HDI_075[2], neg_HDI_100[2])
+                  
+)
+
+cbbPalette =c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+g2=ggplot(df_prob, aes(x=Label, y=Probability, group=Scenario))+
+  geom_point(aes(color=Scenario), size=4)+geom_line(aes(color=Scenario))+
+   geom_errorbar(aes(ymin=Low, ymax=High, color=Scenario), width=.2)+
+  xlab('Evolutionary fate')+
+  ylab("Fraction")+
+  labs(color = TeX("Increase in $\\sigma$"))+
+  scale_color_manual(values=cbbPalette)+
+   theme_classic()+
+theme(axis.text.x = element_text(size = 16),
+             axis.text.y = element_text(size = 16),
+             axis.title.x = element_text(size = 18),
+             axis.title.y = element_text(size = 18),
+             legend.text = element_text(size=16),
+              legend.title = element_text(size=16),
+             legend.position = c(.03, .97),
+             legend.justification = c("left", "top"),
+              legend.background = element_rect(fill=NA)
+             )
+# Add example of population dynamics where ER succeeds in sigma=0 but not in sigma =0.025
+d_test=filter(df, Lin_rescue==TRUE & SD025_rescue==FALSE)
+#parm=d_test[which.max(d_test$N_Lin.N),3:7]
+parm=d_test[3,3:7]
+print(parm)
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+
+Tf=50
+# Dynamics with sigma=0
+counter=0
+for (salt in salt_Linear){
+    parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+    times =seq(Tf*counter, Tf*(counter+1), 0.01)
+    out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+    out=cbind(out, salt=salt)
+    if (counter==0){
+    df1=data.frame(out)
+    }
+    else
+    {
+      df1=rbind(df1, data.frame(out)[2:nrow(out), ])
+    }
+    counter=counter+1
+    last=tail(df1,1)
+    init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+}
+
+# Dynamics with sigma=0.025
+counter=0
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+for (salt in salt_SD025){
+    parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+    times =seq(Tf*counter, Tf*(counter+1), 0.01)
+    out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+    out=cbind(out, salt=salt)
+    if (counter==0){
+    df2=data.frame(out)
+    }
+    else
+    {
+      df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+    }
+    counter=counter+1
+    last=tail(df2,1)
+    init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+}
+
+g3=ggplot(df1, aes(x=time,y=N))+geom_line()+
+   xlab('Time')+
+    ylab(TeX('Populaiton ($N$)'))+
+  ylim(c(0, 10^4))+
+   geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+  annotate("text", x=300,y=9000, label=TeX("\\sigma = 0"), size=16)+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g5=ggplot(df1, aes(x=time,y=Z_mean))+geom_line()+
+      xlab('Time')+
+      ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+      ylim(c(0, 0.6))+
+      geom_linerange(aes(xmin=Tf*0, y=salt_Linear[1], xmax=Tf*1, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*1, y=salt_Linear[2], xmax=Tf*2, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*2, y=salt_Linear[3], xmax=Tf*3, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*3, y=salt_Linear[4], xmax=Tf*4, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*4, y=salt_Linear[5], xmax=Tf*5, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*5, y=salt_Linear[6], xmax=Tf*6, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*6, y=salt_Linear[7], xmax=Tf*7, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*7, y=salt_Linear[8], xmax=Tf*8, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*8, y=salt_Linear[9], xmax=Tf*9, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*9, y=salt_Linear[10], xmax=Tf*10, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*10, y=salt_Linear[11], xmax=Tf*11, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*11,  y=salt_Linear[12], xmax=Tf*12, x=NULL), color="#E69F00", linetype='dashed')+
+    
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g7=ggplot(df1, aes(x=time,y=Z_var))+geom_line()+
+    ylab(TeX('Trait variance ($V$)'))+
+    xlab('Time')+
+    scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+
+g4=ggplot(df2, aes(x=time,y=N))+geom_line()+
+   xlab('Time')+
+    ylab(TeX('Populaiton ($N$)'))+
+    ylim(c(0, 10^4))+
+   geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+  annotate("text", x=300,y=9000, label=TeX("\\sigma = 0.025"), size=16)+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
+        xlab('Time')+
+       ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+      ylim(c(0, 0.6))+
+      geom_linerange(aes(xmin=Tf*0, y=salt_SD025[1], xmax=Tf*1, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*1, y=salt_SD025[2], xmax=Tf*2, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*2, y=salt_SD025[3], xmax=Tf*3, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*3, y=salt_SD025[4], xmax=Tf*4, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*4, y=salt_SD025[5], xmax=Tf*5, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*5, y=salt_SD025[6], xmax=Tf*6, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*6, y=salt_SD025[7], xmax=Tf*7, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*7, y=salt_SD025[8], xmax=Tf*8, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*8, y=salt_SD025[9], xmax=Tf*9, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*9, y=salt_SD025[10], xmax=Tf*10, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*10, y=salt_SD025[11], xmax=Tf*11, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*11,  y=salt_SD025[12], xmax=Tf*12, x=NULL), color="#E69F00", linetype='dashed')+
+    
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+ g8=ggplot(df2, aes(x=time,y=Z_var))+geom_line()+
+    ylab(TeX('Trait variance ($V$)'))+
+    xlab('Time')+
+    scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+g4+g5+g6+g7+g8+plot_layout(ncol=2, nrow=4)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulations.png',width=15, height=18)
+```
+
+```{r distibution of traits}
+library(ggplot2)
+library(patchwork)
+library(quantreg)
+df=read.csv("ER_model_parameter_sweep2.csv")
+threshold=10
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+df_rescue2=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue2))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue2))
+
+g1=ggplot(df_rescue2, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g2=ggplot(df_rescue2, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of enviornmental flucutuations ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+# Show dynamics sigma=0 vs 125
+# Add example of population dynamics where ER succeeds in all sigma
+d_test=filter(df, Lin_rescue==TRUE & SD025_rescue==TRUE &
+               SD050_rescue==TRUE & SD075_rescue==TRUE & 
+                SD100_rescue==TRUE & SD125_rescue==TRUE)
+#parm=d_test[which.max(d_test$Var_SD125.Z_var),3:7]
+parm=d_test[7,3:7]
+print(parm)
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+
+Tf=50
+# Dynamics with sigma=0
+counter=0
+for (salt in salt_Linear){
+    parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+    times =seq(Tf*counter, Tf*(counter+1), 0.01)
+    out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+    out=cbind(out, salt=salt)
+    if (counter==0){
+    df1=data.frame(out)
+    }
+    else
+    {
+      df1=rbind(df1, data.frame(out)[2:nrow(out), ])
+    }
+    counter=counter+1
+    last=tail(df1,1)
+    init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+}
+
+# Dynamics with sigma=0.125
+counter=0
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+for (salt in salt_SD125){
+    parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+    times =seq(Tf*counter, Tf*(counter+1), 0.01)
+    out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+    out=cbind(out, salt=salt)
+    if (counter==0){
+    df2=data.frame(out)
+    }
+    else
+    {
+      df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+    }
+    counter=counter+1
+    last=tail(df2,1)
+    init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+}
+
+g3=ggplot(df1, aes(x=time,y=N))+geom_line()+
+   xlab('Time')+
+    ylab(TeX('Populaiton ($N$)'))+
+   geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+   ylim(c(0, 10^5))+
+  annotate("text", x=300,y=90000, label=TeX("\\sigma = 0"), size=16)+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g5=ggplot(df1, aes(x=time,y=Z_mean))+geom_line()+
+      xlab('Time')+
+      ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+      ylim(c(0, 0.6))+
+      geom_linerange(aes(xmin=Tf*0, y=salt_Linear[1], xmax=Tf*1, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*1, y=salt_Linear[2], xmax=Tf*2, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*2, y=salt_Linear[3], xmax=Tf*3, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*3, y=salt_Linear[4], xmax=Tf*4, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*4, y=salt_Linear[5], xmax=Tf*5, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*5, y=salt_Linear[6], xmax=Tf*6, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*6, y=salt_Linear[7], xmax=Tf*7, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*7, y=salt_Linear[8], xmax=Tf*8, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*8, y=salt_Linear[9], xmax=Tf*9, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*9, y=salt_Linear[10], xmax=Tf*10, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*10, y=salt_Linear[11], xmax=Tf*11, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*11,  y=salt_Linear[12], xmax=Tf*12, x=NULL), color="#E69F00", linetype='dashed')+
+    
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g7=ggplot(df1, aes(x=time,y=Z_var))+geom_line()+
+    ylab(TeX('Trait variance ($V$)'))+
+    xlab('Time')+
+    scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+
+g4=ggplot(df2, aes(x=time,y=N))+geom_line()+
+   xlab('Time')+
+    ylab(TeX('Populaiton ($N$)'))+
+   geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+   ylim(c(0, 10^5))+
+  annotate("text", x=300,y=90000, label=TeX("\\sigma = 0.125"), size=16)+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
+        xlab('Time')+
+       ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+      ylim(c(0, 0.6))+
+      geom_linerange(aes(xmin=Tf*0, y=salt_SD125[1], xmax=Tf*1, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*1, y=salt_SD125[2], xmax=Tf*2, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*2, y=salt_SD125[3], xmax=Tf*3, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*3, y=salt_SD125[4], xmax=Tf*4, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*4, y=salt_SD125[5], xmax=Tf*5, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*5, y=salt_SD125[6], xmax=Tf*6, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*6, y=salt_SD125[7], xmax=Tf*7, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*7, y=salt_SD125[8], xmax=Tf*8, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*8, y=salt_SD125[9], xmax=Tf*9, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*9, y=salt_SD125[10], xmax=Tf*10, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*10,y=salt_SD125[11], xmax=Tf*11, x=NULL), color="#E69F00", linetype='dashed')+
+      geom_linerange(aes(xmin=Tf*11,y=salt_SD125[12], xmax=Tf*12, x=NULL), color="#E69F00", linetype='dashed')+
+    
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+  annotate("text", x=300,y=90000, label=TeX("\\sigma = 0.125"), size=16)+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+ g8=ggplot(df2, aes(x=time,y=Z_var))+geom_line()+
+    ylab(TeX('Trait variance ($V$)'))+
+    xlab('Time')+
+    scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
+    geom_vline(xintercept=Tf*1, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*2, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*3, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*4, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*5, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*6, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*7, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*8, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*9, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*10, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*11, color='#56B4E9', linetype="dashed")+
+    geom_vline(xintercept=Tf*12, color='#56B4E9', linetype="dashed")+
+     theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+g4+g5+g6+g7+g8+plot_layout(ncol=2, nrow=4)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulations2.png',width=15, height=18)
+
+```
+
+## Plot the distribution of traits over time
+```{r when ER succeeds in all cases}
+library(ggplot2)
+library(patchwork)
+library(quantreg)
+
+threshold=10
+df=read.csv("ER_model_parameter_sweep2.csv")
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+# comparison of the enviornment and evolved resistance level
+d_test=filter(df, Lin_rescue==TRUE & SD025_rescue==TRUE &
+               SD050_rescue==TRUE & SD075_rescue==TRUE & 
+                SD100_rescue==TRUE & SD125_rescue==TRUE)
+
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
+salt_SD050=c(0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.6)
+salt_SD075=c(0.125, 0.1, 0.075, 0.2, 0.325, 0.3, 0.275, 0.4, 0.525, 0.5, 0.475, 0.6)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+id_array=c()
+sigma_array=c()
+s_array=c()
+barZ_array=c()
+Var_array=c()
+  id=0
+for(i in 1:nrow(d_test)){
+  parm=d_test[i,3:7]
+  if(i%%500==0){
+    print(i)
+  }
+   #sigma=0
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_Linear){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, id)
+      sigma_array=c(sigma_array, 0)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  id=id+1
+   #sigma=0.025
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_SD025){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, id)
+      sigma_array=c(sigma_array, 0.025)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  id=id+1
+   #sigma=0.05
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_SD050){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, id)
+      sigma_array=c(sigma_array, 0.05)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  } 
+  id=id+1
+  #sigma=0.075
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_SD075){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, id)
+      sigma_array=c(sigma_array, 0.075)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  id=id+1
+  #sigma=0.1
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_SD100){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, id)
+      sigma_array=c(sigma_array, 0.1)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+   id=id+1          
+  #sigma=0.125
+  init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+  counter=0
+  for (salt in salt_SD125){
+      parms=c(alpha_0=parm$alpha_0, beta=parm$beta, gamma=parm$gamma, w=parm$w, s=salt, mu=1e-6, sigma=1e-2, a=parm$a)
+      times =seq(Tf*counter, Tf*(counter+1), 0.01)
+      out =ode(y = init, times = times, func = Oligomorphic, parms = parms)
+      out=cbind(out, salt=salt)
+      if (counter==0){
+      df2=data.frame(out)
+      }
+      else
+      {
+        df2=rbind(df2, data.frame(out)[2:nrow(out), ])
+      }
+      counter=counter+1
+      last=tail(df2,1)
+      
+      id_array=c(id_array, i)
+      sigma_array=c(sigma_array, 0.125)
+      s_array=c(s_array, salt)
+      barZ_array=c(barZ_array, last$Z_mean)
+      Var_array=c(Var_array, last$Z_var)
+      
+      init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  id=id+1
+}
+df=data.frame(ID=id_array, Sigma=sigma_array, Stress=s_array, 
+              Mean=barZ_array, Variance=Var_array)
+write.csv(df, "ER_model_trait_evolution.csv")
+
+
+```
+
+```{r Plot the dynamics of Z and V when ER occurs}
+scientific_notation <- function(x) {
+     x <- format(x, scientific = TRUE)
+     x <- gsub("^(.*)e", "'\\1'e", x)
+     x <- gsub("e", "%*%10^", x)
+     x <- gsub('\\+', '', x)
+     parse(text = x)
+}
+df=read.csv('ER_model_trait_evolution.csv')
+df$Diff=df$Mean-df$Stress
+
+g1=ggplot(df[df$Sigma==0,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+  xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+  ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+  annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g2=ggplot(df[df$Sigma==0.025,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+  xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+  ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+ annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0.025$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g3=ggplot(df[df$Sigma==0.05,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+  xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+  ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+  annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0.05$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g4=ggplot(df[df$Sigma==0.075,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+ xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+   ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+  annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0.075$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g5=ggplot(df[df$Sigma==0.1,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+ xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+   ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+  annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0.1$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g6=ggplot(df[df$Sigma==0.125,], aes(x=Stress, y=Diff))+
+  geom_violin(aes(group=Stress), scale='width')+
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  stat_summary(fun.y=median, geom="line", color="black")+
+  xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+  ylab(TeX('$\\bar{Z} - s_{\\tau}$'))+
+  annotate("text", x=0.3, y=0.05, label=TeX('$\\sigma = 0.125$'), size=8)+
+  geom_hline(yintercept=0, color="#E69F00", linetype='dashed')+
+  xlim(c(0, 0.65))+
+  ylim(c(-0.35, 0.1))+
+  theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g1+g2+g3+g4+g5+g6+plot_layout(ncol=2, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_barZ_dynamics.png',width=9, height=12)
+
+
+
+v1=ggplot(df[df$Sigma==0,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+     ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+  scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0$'), size=8)
+
+v2=ggplot(df[df$Sigma==0.025,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+    ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+  scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0.025$'), size=8)
+
+
+v3=ggplot(df[df$Sigma==0.05,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+    ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+  scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0.05$'), size=8)
+
+v4=ggplot(df[df$Sigma==0.075,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+    ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+  scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0.075$'), size=8)
+
+v5=ggplot(df[df$Sigma==0.1,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+    ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+ scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0.1$'), size=8)
+
+v6=ggplot(df[df$Sigma==0.125,], aes(x=Stress, y=Variance))+
+    geom_violin(aes(group=Stress))+
+    stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    stat_summary(fun.y=median, geom="line", color="black")+
+    xlab(TeX('Environmental stress ($s_{\\tau}$)'))+
+     ylab(TeX('Variance in resistance ($V$)'))+
+    xlim(c(0, 0.65))+
+    theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+    )+
+  scale_y_continuous(limits=c(5*1e-5, 3*1e-3), trans='log10', labels = scientific_notation)+
+  annotate("text", x=0.3, y=0.002, label=TeX('$\\sigma = 0.125$'), size=8)
+
+v1+v2+v3+v4+v5+v6+plot_layout(ncol=2, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_Var_dynamics.png',width=9, height=12)
+
+```
+
+```{r Plot SI for sensisitivity analysis again st Tf and VM}
+library(ggplot2)
+library(patchwork)
+library(nclbayes)
+library(latex2exp)
+library(dplyr)
+library(deSolve)
+library(quantreg)
+
+# Short Tf
+df=read.csv("ER_model_parameter_sweep_shortTf.csv")
+threshold=10 # the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
+
+g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+plot_layout(ncol=3, nrow=1)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_ShorterTf.png',width=15, height=6)
+
+
+##Large VM
+df=read.csv("ER_model_parameter_sweep_higherMu.csv")
+threshold=10 # the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
+
+g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+plot_layout(ncol=3, nrow=1)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_HigherMu.png',width=15, height=6)
+```
+
+
+```{r Sensitivigty against threshold of extinction}
+library(ggplot2)
+library(patchwork)
+library(nclbayes)
+library(latex2exp)
+library(dplyr)
+library(deSolve)
+
+
+df=read.csv("ER_model_parameter_sweep2.csv")
+threshold=1# the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+
+g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+     xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+threshold=100# the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g4=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+ xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+
+g5=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+     xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g6=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+threshold=1000# the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g7=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+
+g8=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g9=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+g4+g5+g6+g7+g8+g9+plot_layout(ncol=3, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_Threshold.png',width=15, height=15)
+```
