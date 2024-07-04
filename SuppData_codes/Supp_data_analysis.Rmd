@@ -1,0 +1,113 @@
+---
+title: "Analysis_SuppFigs"
+output: html_notebook
+author: Shota Shibasaki
+---
+This notebook provide the codes used in the Supplimentary Figures and Tabels.
+```{r Growth rate under various NaCl concentration}
+library(xtable)
+library("ggplot2")
+library("patchwork")
+df=read.csv('N-227_uploaded.csv')
+df=df[df$Control=='N', ]  # remove controls
+df=subset(df, select = -c(Control, OD680, OD750, Shkae, Photo.after.7.days)) # we do not use the row OD; delta_OD is enough
+colnames(df)=c('Date', 'Time', 'Plate', 'NaCl', 'OD680', 'OD750')
+plates=c('1031-1','1031-2', '1031-3')
+salts=c(0.00, 0.06, 0.20, 0.30, 0.40, 0.60)
+Pla=c()
+Sal=c()
+Mu750=c()
+# To avoid negative values of OD, we add small values
+if (min(df$OD750)<0){
+  df$OD750=df$OD750-min(df$OD750)+0.001
+}
+
+for (i in 1:length(plates)){
+  plate=plates[i]
+  for(j in 1:length(salts)){
+    salt=salts[j]
+    mu750=log(df[df$Plate==plate & df$NaCl==salt & df$Time==7, ]$OD750/df[df$Plate==plate & df$NaCl==salt & df$Time==0, ]$OD750)/7
+    Pla=c(Pla, plate)
+    Sal=c(Sal, salt)
+    Mu750=c(Mu750, mu750)
+  }
+ 
+}
+df_new=data.frame(NaCl=Sal,
+                    Plate=Pla,
+                    Growth750=Mu750)
+ggplot(df_new, aes(x=NaCl, y=Growth750))+geom_point(size=2)+geom_smooth(method='lm')+
+  xlab('NaCl (M)') + ylab('Growth rate ( /day)')+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        ) +
+  geom_hline(yintercept=0, linetype="dashed", 
+                color = "black", size=1)
+ggsave('Growth_B227_OD750_NaCl.pdf')
+model = lm(Growth750~NaCl, data=df_new)
+#summary(model)
+print(xtable(summary(model))) # for Latex output
+```
+
+```{r N227 under 1M NaCl}
+library("ggplot2")
+library("patchwork")
+df=read.csv('N227_1M_NaCl.1.csv')
+# plot the distribution of day 1
+scientific_notation <- function(x) {
+     x <- format(x, scientific = TRUE)
+     x <- gsub("^(.*)e", "'\\1'e", x)
+     x <- gsub("e", "%*%10^", x)
+     x <- gsub('\\+', '', x)
+     parse(text = x)
+}
+ggplot(df, aes(x=Day, y=Ave, group=factor(Sample) ))+geom_point(size=2, color='black')+geom_line(color='black')+
+  geom_errorbar(aes(ymin = Ave - SE, ymax = Ave + SE), color='black', width = .05)+
+  xlab('Time (day)')+ylab('Cells ( /ml)')+scale_y_continuous(labels = scientific_notation)+
+  theme_classic()+
+  #ggtitle('Chlorella vulgaris under 1M NaCl')+
+    theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none"
+        ) +
+  geom_hline(yintercept=10^5, linetype='dotted')
+ggsave('N227_1MNaCl.pdf')
+```
+
+```{r cell count vs OD}
+library("ggplot2")
+library("patchwork")
+library("latex2exp")
+df=read.csv('CellCount-OD - N-227.csv')
+g1=ggplot(df, aes(x=Cell.count..x10.5.ml., y=delta_OD680))+geom_point(size=2)+
+  xlab(TeX("Cells ($\\times 10^5$/ml)"))+ylab('OD at 680 nm')+
+  geom_smooth(method='lm')+
+  annotate("text", x=50,   y=0.3, label=TeX("$R^2=0.853$"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+g2=ggplot(df, aes(x=Cell.count..x10.5.ml., y=delta_OD750))+geom_point(size=2)+
+  xlab(TeX("Cells ($\\times 10^5$/ml)"))+ylab('OD at 750 nm')+
+  geom_smooth(method='lm')+
+   annotate("text", x=50,   y=0.15, label=TeX("$R^2=0.936$"))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+g1+g2+plot_annotation(tag_levels = 'A') &  theme(plot.tag  = element_text(face='bold', size=24))
+ggsave('N227_OD_count.pdf')
+model680 = lm(delta_OD680~Cell.count..x10.5.ml., data=df)
+print(xtable(summary(model680)))
+model750 = lm(delta_OD750~Cell.count..x10.5.ml., data=df)
+print(xtable(summary(model750)))
+```
