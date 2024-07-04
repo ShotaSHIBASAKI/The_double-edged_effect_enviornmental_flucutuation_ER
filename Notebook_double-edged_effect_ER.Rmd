@@ -2289,3 +2289,75 @@ g9=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
 g1+g2+g3+g4+g5+g6+g7+g8+g9+plot_layout(ncol=3, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
 ggsave('ER_simulation_Threshold.png',width=15, height=15)
 ```
+
+
+SI for experimental data
+
+```{r plots with separation}
+p1=ggplot(data_parm[data_parm$Condition=='Control', ], aes(x=Week, y=Mu, color="#000000"))+ 
+   geom_line(color="#000000",aes(group=ID))+
+geom_point(color="#000000", size=3, alpha=0.2)+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('Growth rate (/day)')+xlab('')+
+  annotate('text', x=10, y=0.8, label='Control', color="#000000", size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(1,3,5,7,9, 11))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 0),
+        axis.title.y = element_text(size = 18)
+        )
+
+p2=ggplot(data_parm[data_parm$Condition=='Linear', ], aes(x=Week, y=Mu, color="#E69F00"))+ 
+   geom_line(color="#E69F00",aes(group=ID))+
+geom_point(color="#E69F00", size=3, alpha=0.2)+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('')+xlab('')+
+  annotate('text', x=10, y=0.8, label=TeX("$\\sigma=0.000$"), color="#E69F00", size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(1,3,5,7,9, 11))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 0),
+        axis.title.y = element_text(size = 0)
+        )
+
+p3=ggplot(data_parm[data_parm$Condition=='SD025', ], aes(x=Week, y=Mu, color="#56B4E9"))+ 
+   geom_line(aes(group=ID), color="#56B4E9")+
+geom_point(color="#56B4E9", size=3, alpha=0.2)+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('Growth rate (/day)')+xlab('Time (week)')+
+  annotate('text', x=10, y=0.8, label=TeX("$\\sigma=0.025$"), color="#56B4E9",size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(1, 3, 5, 7, 9,  11))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18)
+        )
+
+p4=ggplot(data_parm[data_parm$Condition=='SD100', ], aes(x=Week, y=Mu, color="#009E73"))+ 
+   geom_line(color="#009E73",aes(group=ID))+
+geom_point(color="#009E73", size=3, alpha=0.2)+
+#geom_jitter(position=position_dodge(0.8), alpha=0.5)+
+ylab('')+xlab('Time (week)')+
+   annotate('text', x=10, y=0.8, label=TeX("$\\sigma=0.100$"), color="#009E73", size=6)+
+  ylim(c(-0.05, 1.0))+
+  scale_colour_manual(values=cbbPalette)+
+  scale_x_continuous(breaks=c(1,3,5,7,9, 11))+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 0)
+        )
+p=p1+p2+p3+p4+plot_layout(ncol=2)+plot_annotation(tag_levels = "A") & 
+                                            theme(plot.tag = element_text(size = 20))
+ggsave('Growth_over_time_separation.pdf')
+```
