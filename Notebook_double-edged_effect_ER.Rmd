@@ -12,6 +12,7 @@ library(ggplot2)
 library(patchwork)
 library(rstatix) # for wilcoxon rank sum and its effect size
 library(xtable) # latex table generation
+library(latex2exp)
 
 # The colorblind-safe palette with black:
 cbbPalette =c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
@@ -581,7 +582,7 @@ f=ggplot(df_new[df_new$Condition != 'Control', ], aes(x=Condition, y=Mu, color=C
   ylim(c(-0.03, 0.085))+
   scale_colour_manual(values=cbbPalette2)+
   scale_x_discrete(labels=c(TeX("$\\sigma=0.000$"),
-                            TeX("$\\sigma=0.025$"), TeX("$\\sigma=0.000$")))+
+                            TeX("$\\sigma=0.025$"), TeX("$\\sigma=0.100$")))+
   geom_hline(yintercept=0, linetype='dashed', color='black', size=1)+
   theme_classic()+
   theme(axis.text.x = element_text(size = 16),
@@ -757,8 +758,34 @@ write.csv(d, "ER_model_parameter_sweep2.csv")
 ```
 
 ## analysis of the parameter sweep
+First, we will see whether orgnaisms can persist without evolution (i.e., calculate the sign of growth rate when Z =0 and s=0.6)
 
-First we plot the probability of evolutionary rescue
+```{r Check signs}
+fname='ER_model_parameter_sweep2.csv'
+#fname='ER_model_parameter_sweep_shortTf.csv'
+#fnmae='ER_model_parameter_sweep_higherMu.csv'
+# Extract parameter values
+df=read.csv(fname)[, c("alpha_0", "beta", "gamma","w", "a")] 
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+
+# Give stress level and trait
+s=0.6
+#Z_mean=0.6 # in this case, population should persist
+Z_mean=0 # in this case population should go exitnct
+
+alpha=alpha_0*exp(-w*s)
+growth_sign= alpha*exp(-beta*(Z_mean-s)^2)-gamma>0
+sum(growth_sign) # if more than one, organimss can persist without evolution in some cases
+
+
+```
+
+
+Next, we plot the probability of evolutionary rescue
 ```{r Plot ER simulations}
 library(ggplot2)
 library(patchwork)
