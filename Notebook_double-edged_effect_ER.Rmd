@@ -59,25 +59,50 @@ week_ret=c()
 id_ret=c()
 cond_ret=c()
 mu_ret=c()
+#a_ret=c()
 nacl_ret=c()
+#delta_AIC=c()
 for (i in 1:length(week_list)){
   week=week_list[i]
-  
+  print(week)
   for (j in 1:length(id_list)){
     id=id_list[j]
     condition=df[df$Week==week & df$ID==id & df$Day==0,]$Condition
     #We can estimate the growth rate from the exponential curve
     d=df[df$Week==week& df$ID==id, ]
-    d_new=data.frame(Count=c(d$Count1, d$Count2, d$Count3), Day=d$Day) # use all samples
-    model=nls(Count ~ const*exp(Day*mu), data=d_new, 
-     start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
-    mu=summary(model)$coefficients[2]
-    
-    week_ret=c(week_ret, week)
-    id_ret=c(id_ret, id)
-    cond_ret=c(cond_ret, condition)
-    mu_ret=c(mu_ret, mu)
-    nacl_ret=c(nacl_ret, df_cond[df_cond$Condition==condition & df_cond$Week==week,]$NaCl)
+    d_new=data.frame(Count=c(d$Cunt1, d$Count2, d$Count3), Day=d$Day) # use all samples
+        #--------------------------------------------
+        # We perform exponential fitting because AIC suggested that
+        # an exponential function is more predictable than a logistic growth model
+        # To see this result, run the below code
+        #Logistic growth model
+        #mu_init=0.6
+        #model1=nls(Count ~ const*mu*exp(mu*Day)/(mu+a*const*(exp(mu*Day)-1)), data=d_new, 
+        # start=c(
+        #   const=d[d$Day==0,]$Mean, 
+        #   mu=mu_init, 
+        #    a=mu_init/max(d_new$Count) 
+        #      ),
+        # algorithm = "port",
+        # lower=c(1, 1e-8,1e-8), upper=c(1e9, 1,1),
+        # trace=FALSE,
+        # control=nls.control(maxiter = 500,  warnOnly=TRUE)
+        # )
+        #Exp growth model
+        # model2=nls(Count ~ const*exp(Day*mu), data=d_new, 
+        #     start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
+        #delta_AIC=c(delta_AIC, AIC(model2)- AIC(model1))
+        #----------------------------------------------------
+   model=nls(Count ~ const*exp(Day*mu), data=d_new, 
+       start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
+  mu=summary(model)$coefficients[1]
+   
+    #week_ret=c(week_ret, week)
+    #id_ret=c(id_ret, id)
+    #cond_ret=c(cond_ret, condition)
+    #mu_ret=c(mu_ret, mu)
+    #a_ret=c(a_ret, a)
+    #nacl_ret=c(nacl_ret, df_cond[df_cond$Condition==condition & df_cond$Week==week,]$NaCl)
     
   }
 }
@@ -85,6 +110,7 @@ data_parm=data.frame(Week=week_ret,
                      ID=id_ret,
                      Condition=cond_ret,
                      Mu=mu_ret,
+                     A=a_ret, 
                      NaCl=nacl_ret)
 
 data_lin=data_parm[data_parm$Condition=='Linear', ]
@@ -606,6 +632,185 @@ ggsave('Rescue_lethal_summary.pdf', width = 9, height = 13, dpi = 300)
 xtable(stat2)
 ```
 
+```{r analysis of additional experiment}
+
+# Fit the curve to the exponential function
+
+library(ggplot2)
+library(patchwork)
+library(rstatix) 
+library(latex2exp)
+library(ggsignif)
+# The colorblind-safe palette with black:
+cbbPalette =c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+cbbPalette2=c( "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+scientific_notation <- function(x) {
+     x <- format(x, scientific = TRUE)
+     x <- gsub("^(.*)e", "'\\1'e", x)
+     x <- gsub("e", "%*%10^", x)
+     x <- gsub('\\+', '', x)
+     parse(text = x)
+}
+df= read.csv("AddionalExperiment.csv")
+
+#======Growth in 1M==========
+ID=unique(df$ID)
+time=unique(df$Time)
+Condition=df[df$Time==time[1], ]$Condition
+
+mu_list=c()
+const_list=c()
+for (id in unique(df$ID)){
+  d=df[df$ID==id, ]
+  d_new=data.frame(Count=c(d$Count1, d$Count2, d$Count3), Time=d$Time) # use all samples
+  # fit to the exponential curve
+  model=nls(Count ~ const*exp(Time*mu), data=d_new, 
+    start=c(const=df[df$ID==id & df$Time==0,]$Mean, mu=0.6))
+   const=summary(model)$coefficients[1]
+   mu=summary(model)$coefficients[2]
+   mu_list=append(mu_list, mu)
+   const_list=append(const_list, const)
+}
+
+
+df_new=data.frame(ID=ID,
+                  Condition=Condition,
+                  Mu=mu_list,
+                  Const=const_list)
+
+
+# Stat test
+
+#-------------- Growth rate Mu comparison -------------
+group1=c("Linear", "Linear",  "SD025")
+group2=c("SD025", "SD100",  "SD100")
+alternative=c("greater", "greater", "greater")
+p_list=c()
+effsize_list=c()
+W_list=c()
+for(i in 1:length(group1)){
+   W=wilcox_test(Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])
+  # print(W)
+   w_effect=wilcox_effsize(Mu~ Condition, 
+                 data=df_new[df_new$Condition==group1[i] | df_new$Condition==group2[i], ],
+                 alternative=alternative[i])$effsize
+   W_list=append(W_list, W$statistic)
+   p_list=append(p_list, W$p)
+   effsize_list=append(effsize_list, w_effect)
+}
+p.corr= p.adjust(p_list, method = "BH") # FDR correction # FDR correction
+signif=c()
+for(i in 1:length(p.corr)){
+  if(p.corr[i]<0.05){
+    signif=append(signif, "*")
+  }
+  else{
+    signif=append(signif, "n.s.")
+  }
+}
+stat1=data.frame(group1=group1,
+                   group2=group2,
+                   W=W_list,
+                   #P.val=p_list,
+                   P.FDR=p.corr,
+                   p.adj.signif=signif,
+                   EffectSize=effsize_list)
+print(stat1)
+
+#Plot the data
+
+f1=ggplot(df_new, aes(x=Condition, y=Mu, color=Condition))+
+  geom_jitter(size=3, alpha=0.8, width=0.1, height=0)+
+  ylim(c(-0.1, 0.5))+
+  xlab('Condition')+ylab('Growth rate (/day)')+
+  scale_colour_manual(values=cbbPalette2)+
+  scale_x_discrete(labels=c(TeX("$\\sigma=0.000$"),
+                            TeX("$\\sigma=0.025$"), TeX("$\\sigma=0.100$")))+
+  geom_hline(yintercept=0, linetype='dashed', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 0),
+        legend.position = "none"
+        )
+ypos=c( 0.4, 0.46, 0.1)
+for(i in 1:nrow(stat2)){
+  f1=f1+ geom_signif( y_position=ypos[i],
+    comparisons = list(c(stat1$group1[i], stat1$group2[i])),
+    annotation = stat1$p.adj.signif[i],
+    color='black', textsize=8
+    )
+}
+
+# D0 similar things in the original data
+df2=read.csv("CellCount.csv")
+df2=df2[df2$Week==12, ] #Extract week 12 data only
+ID=unique(df$ID)
+time=unique(df$Time)
+Condition=df[df$Time==time[1], ]$Condition
+
+mu_list=c()
+const_list=c()
+for (id in unique(df$ID)){
+  d2=df2[df2$ID==id, ]
+  d2_new=data.frame(Count=c(d2$Count1, d2$Count2, d2$Count3), Time=d2$Day) # use all samples
+  # fit to the exponential curve
+  model=nls(Count ~ const*exp(Time*mu), data=d2_new, 
+    start=c(const=df[df2$ID==id & df2$Day==0,]$Mean, mu=0.6))
+   const=summary(model)$coefficients[1]
+   mu=summary(model)$coefficients[2]
+   mu_list=append(mu_list, mu)
+   const_list=append(const_list, const)
+}
+
+
+df_new2=data.frame(ID=ID,
+                  Condition=Condition,
+                  Mu=mu_list,
+                  Const=const_list)
+
+group1=c("Linear", "Linear",  "SD025")
+group2=c("SD025", "SD100",  "SD100")
+p.corr=c(0.17, 0.01, 0.13)  # see Table S3
+signif=c('n.s.', '*', 'n.s.')  # see Table S3
+stat2=data.frame(group1=group1,
+                   group2=group2,
+                   P.FDR=p.corr,
+                   p.adj.signif=signif)
+
+f2=ggplot(df_new2, aes(x=Condition, y=Mu, color=Condition))+
+  geom_jitter(size=3, alpha=0.8, width=0.1, height=0)+
+  ylim(c(-0.1, 0.55))+
+  xlab('Condition')+ylab('Growth rate (/day)')+
+  scale_colour_manual(values=cbbPalette2)+
+  scale_x_discrete(labels=c(TeX("$\\sigma=0.000$"),
+                            TeX("$\\sigma=0.025$"), TeX("$\\sigma=0.100$")))+
+  geom_hline(yintercept=0, linetype='dashed', color='black', size=1)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none"
+        )
+ypos=c( 0.45, 0.50, 0.42)
+for(i in 1:nrow(stat2)){
+  f2=f2+ geom_signif( y_position=ypos[i],
+    comparisons = list(c(stat2$group1[i], stat2$group2[i])),
+    annotation = stat2$p.adj.signif[i],
+    color='black', textsize=8
+    )
+}
+
+
+f=f2+f1+plot_annotation(tag_levels = "A") & 
+                                            theme(plot.tag = element_text(size = 20))
+ggsave('Additional_experiment.pdf', width = 8, height = 6, dpi = 300)
+```
+
 # Mathematical model
 
 ## Define the dynamics and show simple examples
@@ -638,12 +843,23 @@ plot(out)
 
 # Parameter sweep under flucutuations corresponding to the experimental scenarios
 ```{r parameter sweep 1}
-number_replicate=10000
-alpha_0=runif(number_replicate, min=0.5, max=2.5)
-beta=runif(number_replicate, min=30, 150)
-gamma=runif(number_replicate, min=0.1, max=0.4)
-w=runif(number_replicate, min=0.001, max=0.4)
-a=runif(number_replicate, 1e-6, 1e-4)
+
+# In case use the genrated parameters
+df=read.csv("ER_model_parameter_sweep.csv")
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+#----------------------------
+# In case sample parameter values 
+#number_replicate=10000
+#alpha_0=runif(number_replicate, min=0.5, max=2.5)
+#beta=runif(number_replicate, min=30, 150)
+#gamma=runif(number_replicate, min=0.1, max=0.4)
+#w=runif(number_replicate, min=0.001, max=0.4)
+#a=runif(number_replicate, 1e-6, 1e-4)
+#------------------------
 salt_Linear=seq(0.05,0.6, 0.05)
 salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
 salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
@@ -757,6 +973,169 @@ d=cbind(df, df_new)
 write.csv(d, "ER_model_parameter_sweep2.csv")
 ```
 
+## Vizualize the changes of intrinsic growth rate over time or NaCL in the simulations
+
+```{r plot intrinsic growth rate}
+df=read.csv("ER_model_parameter_sweep2.csv")
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+number_replicate=nrow(df)
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+salt_SD050=c(0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.6)
+salt_SD075=c(0.125, 0.1, 0.075, 0.2, 0.325, 0.3, 0.275, 0.4, 0.525, 0.5, 0.475, 0.6)
+salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+init=c(N=10000, Z_mean=0.0, Z_var=1e-4)
+Tf=50
+
+
+GrowthFunc=function(Z_mean, parms, s){
+  alpha_0=parms[1]
+  beta=parms[2]
+  gamma=parms[3]
+   return(alpha_0*exp(-beta*(Z_mean-s)^2)-gamma)
+}
+
+Long_Dynamics2=function(y0, Tf, parms, salt_stress){
+  intrinsic_growth=c()
+  for (salt in salt_stress){
+    times =seq(0, Tf, 0.01)
+    out =ode(y = y0, times = times, func = Oligomorphic, 
+             parms = c(parms, s=salt, mu=1e-6, sigma=1e-2))
+    last=tail(data.frame(out),1)
+    intrinsic_growth=c(intrinsic_growth, GrowthFunc(last$Z_mean,  parms, salt))
+    y0=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  return(intrinsic_growth)
+}
+for(n in 1:number_replicate){
+  if(n%%1000==0){
+    print(n)
+  }
+   parms=c(alpha_0=alpha_0[n],
+           beta=beta[n], 
+           gamma=gamma[n], 
+           w=w[n],
+           a=a[n])
+   
+  growth_rate_Linear=Long_Dynamics2(init, Tf, parms, salt_Linear)
+  growth_rate_SD025=Long_Dynamics2(init, Tf, parms, salt_SD025)
+  growth_rate_SD050=Long_Dynamics2(init, Tf, parms, salt_SD050)
+  growth_rate_SD075=Long_Dynamics2(init, Tf, parms, salt_SD075)
+  growth_rate_SD100=Long_Dynamics2(init, Tf, parms, salt_SD100)
+  growth_rate_SD125=Long_Dynamics2(init, Tf, parms, salt_SD125)
+  
+  Parm_ID=c(rep(sprintf("parm%d_simga0", n), 12), rep(sprintf("parm%d_simga025", n),12),
+        rep(sprintf("parm%d_simga050", n), 12), rep(sprintf("parm%d_simga075", n), 12),
+        rep(sprintf("parm%d_simga100", n),12), rep(sprintf("parm%d_simga125", n), 12))
+  Sigma=c(rep(0, 12), rep(0.025, 12), rep(0.05, 12),
+                rep(0.075, 12), rep(0.1, 12), rep(0.125, 12))
+  Stress=c(salt_Linear, salt_SD025, salt_SD050,
+                salt_SD075, salt_SD100, salt_SD125)
+  Cycle=rep(1:12, 6)
+  Growth=c(growth_rate_Linear,  growth_rate_SD025,  growth_rate_SD050,
+                growth_rate_SD075,  growth_rate_SD100,  growth_rate_SD125)
+        
+  if(n==1){
+   df_new=data.frame(par_ID=Parm_ID,
+                     Sigma=Sigma,
+                     Stress=Stress,
+                     Cycle=Cycle,
+                     Growth=Growth)
+  }
+  else{
+    d_add=data.frame(par_ID=Parm_ID,
+                     Sigma=Sigma,
+                     Stress=Stress,
+                     Cycle=Cycle,
+                     Growth=Growth)
+    df_new=rbind(df_new,d_add)
+  }
+}
+write.csv(df_new, "ER_model_growth_dynamics.csv")
+
+```
+
+
+```{r analysis of intrinsic growth rate in the simulation}
+library(ggplot2)
+library(patchwork)
+library(latex2exp)
+cbbPalette2 =c("#E69F00","#56B4E9","#F0E442", "#D55E00", "#009E73","#CC79A7")
+df=read.csv("ER_model_growth_dynamics.csv")
+
+#--- Because violinplots are hard to read, we calculate the mean and sd of growth rates at each sigma and stress level
+sigmas=unique(df$Sigma)
+sigma_list=c()
+cycle_list=c()
+mean_growth_list=c()
+se_growth_list=c()
+stress_list=c()
+for(s in sigmas){
+  d=df[df$Sigma==s, ]
+  stress_level=unique(d$Stress)
+  for(stress in stress_level){
+    r=median(d[d$Stress==stress, ]$Growth)
+    sigma_list=c(sigma_list, s)
+    cycle_list=c(cycle_list, d[d$Stress==stress,]$Cycle[1])
+    mean_growth_list=c(mean_growth_list, mean(d[d$Stress==stress, ]$Growth))
+    se_growth_list=c(se_growth_list, sd(d[d$Stress==stress, ]$Growth)/sqrt(nrow(d[d$Stress==stress, ])))
+    stress_list=c(stress_list, stress)
+  }
+}
+df=data.frame(Sigma=sigma_list, 
+              Cycle=cycle_list,
+              Stress=stress_list,
+              Mean_Growth=mean_growth_list,
+              SE_Growth=se_growth_list)
+ggplot(df, aes(x=Stress, y= Mean_Growth, color=factor(Sigma)))+
+  geom_point(size=2)+geom_line(linewidth=0.75)+
+  geom_errorbar(aes(ymin=Mean_Growth-SE_Growth, 
+                    ymax=Mean_Growth+SE_Growth,
+                    width=0.01
+                    ))+
+  xlab(TeX('Enviornmental stress level $s$'))+
+  ylab(TeX('Intrinsic growth rate $r(\\bar{Z},s)$'))+
+  labs(color = TeX("$\\sigma$"))+
+  scale_x_continuous(breaks=c(0.1, 0.2, 0.3, 0.4, 0.5,0.6))+
+  scale_color_manual(values=cbbPalette2)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "top",
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=16)
+        )
+ggsave("ER_simulation_growth_over_stress.png")
+
+ggplot(df, aes(x=Cycle, y= Mean_Growth, color=factor(Sigma)))+
+  geom_point(size=3)+geom_line(linewidth=0.75)+
+  geom_errorbar(aes(ymin=Mean_Growth-SE_Growth, 
+                    ymax=Mean_Growth+SE_Growth,
+                    width=0.15
+                    ))+
+  xlab(TeX('Cycle of environmental changes $\\tau$'))+
+  ylab(TeX('Intrinsic growth rate $r(\\bar{Z},s)$'))+
+  labs(color = TeX("$\\sigma$"))+
+  scale_x_continuous(breaks=c(1,3,5,7, 9, 11))+
+  scale_color_manual(values=cbbPalette2)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=16),
+        legend.position = "top"
+        )
+ggsave("ER_simulation_growth_over_time.png")
+```
 ## analysis of the parameter sweep
 First, we will see whether orgnaisms can persist without evolution (i.e., calculate the sign of growth rate when Z =0 and s=0.6)
 
@@ -785,14 +1164,14 @@ sum(growth_sign) # if more than one, organimss can persist without evolution in 
 ```
 
 
-Next, we plot the probability of evolutionary rescue
-```{r Plot ER simulations}
+Next, we summarizes the results of the simulations
+```{r Plot ER simulation result}
 library(ggplot2)
 library(patchwork)
 library(nclbayes)
 library(latex2exp)
 library(dplyr)
-library(deSolve)
+library(quantreg)
 
 df=read.csv("ER_model_parameter_sweep2.csv")
 threshold=10 # the result seems to be robust
@@ -916,6 +1295,123 @@ theme(axis.text.x = element_text(size = 16),
              legend.justification = c("left", "top"),
               legend.background = element_rect(fill=NA)
              )
+# Plotting the growth rate over time
+cbbPalette2 =c("#E69F00","#56B4E9","#F0E442", "#D55E00", "#009E73","#CC79A7")
+df=read.csv("ER_model_growth_dynamics.csv")
+#--- Because violinplots are hard to read, we calculate the mean and sd of growth rates at each sigma and stress level
+sigmas=unique(df$Sigma)
+sigma_list=c()
+cycle_list=c()
+mean_growth_list=c()
+se_growth_list=c()
+stress_list=c()
+for(s in sigmas){
+  d=df[df$Sigma==s, ]
+  stress_level=unique(d$Stress)
+  for(stress in stress_level){
+    r=median(d[d$Stress==stress, ]$Growth)
+    sigma_list=c(sigma_list, s)
+    cycle_list=c(cycle_list, d[d$Stress==stress,]$Cycle[1])
+    mean_growth_list=c(mean_growth_list, mean(d[d$Stress==stress, ]$Growth))
+    se_growth_list=c(se_growth_list, sd(d[d$Stress==stress, ]$Growth)/sqrt(nrow(d[d$Stress==stress, ])))
+    stress_list=c(stress_list, stress)
+  }
+}
+df=data.frame(Sigma=sigma_list, 
+              Cycle=cycle_list,
+              Stress=stress_list,
+              Mean_Growth=mean_growth_list,
+              SE_Growth=se_growth_list)
+g3=ggplot(df, aes(x=Stress, y= Mean_Growth, color=factor(Sigma)))+
+  geom_point(size=2)+geom_line(linewidth=0.75)+
+  geom_errorbar(aes(ymin=Mean_Growth-SE_Growth, 
+                    ymax=Mean_Growth+SE_Growth,
+                    width=0.025
+                    ))+
+  xlab(TeX('Enviornmental stress level $s$'))+
+  ylab(TeX('Intrinsic growth rate $r(\\bar{Z},s)$'))+
+  labs(color = TeX("$\\sigma$"))+
+  scale_x_continuous(breaks=c(0.1, 0.2, 0.3, 0.4, 0.5,0.6))+
+  scale_color_manual(values=cbbPalette2)+
+  theme_classic()+
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "top",
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=16)
+        )
+
+d=read.csv("ER_model_parameter_sweep2.csv")
+threshold=10
+d$Lin_rescue=d$N_Lin.N>threshold
+d$SD025_rescue=d$N_SD025.N>threshold
+d$SD050_rescue=d$N_SD050.N>threshold
+d$SD075_rescue=d$N_SD075.N>threshold
+d$SD100_rescue=d$N_SD100.N>threshold
+d$SD125_rescue=d$N_SD125.N>threshold
+df_rescue2=data.frame(
+  SD=c(rep(0, nrow(d[d$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(d[d$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(d[d$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(d[d$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(d[d$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(d[d$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(d[d$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         d[d$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+        d[d$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          d[d$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         d[d$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          d[d$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(d[d$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         d[d$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         d[d$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         d[d$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         d[d$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         d[d$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue2))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue2))
+
+g4=ggplot(df_rescue2, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g5=ggplot(df_rescue2, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of enviornmental flucutuations ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g=g1+g2+g3+g4+g5+plot_layout(ncol=2, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulations.png',width=12, height=15)
+```
+
+```{r example 1}
+library(deSolve)
+df=read.csv("ER_model_parameter_sweep2.csv")
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
 # Add example of population dynamics where ER succeeds in sigma=0 but not in sigma =0.025
 d_test=filter(df, Lin_rescue==TRUE & SD025_rescue==FALSE)
 #parm=d_test[which.max(d_test$N_Lin.N),3:7]
@@ -965,7 +1461,7 @@ for (salt in salt_SD025){
     init=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
 }
 
-g3=ggplot(df1, aes(x=time,y=N))+geom_line()+
+f1=ggplot(df1, aes(x=time,y=N))+geom_line()+
    xlab('Time')+
     ylab(TeX('Populaiton ($N$)'))+
   ylim(c(0, 10^4))+
@@ -989,7 +1485,7 @@ g3=ggplot(df1, aes(x=time,y=N))+geom_line()+
           axis.title.y = element_text(size = 18)
           )
 
-g5=ggplot(df1, aes(x=time,y=Z_mean))+geom_line()+
+f3=ggplot(df1, aes(x=time,y=Z_mean))+geom_line()+
       xlab('Time')+
       ylab(TeX('Trait mean ($\\bar{Z}$)'))+
       ylim(c(0, 0.6))+
@@ -1025,7 +1521,7 @@ g5=ggplot(df1, aes(x=time,y=Z_mean))+geom_line()+
           axis.title.y = element_text(size = 18)
           )
 
-g7=ggplot(df1, aes(x=time,y=Z_var))+geom_line()+
+f5=ggplot(df1, aes(x=time,y=Z_var))+geom_line()+
     ylab(TeX('Trait variance ($V$)'))+
     xlab('Time')+
     scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
@@ -1049,7 +1545,7 @@ g7=ggplot(df1, aes(x=time,y=Z_var))+geom_line()+
           )
 
 
-g4=ggplot(df2, aes(x=time,y=N))+geom_line()+
+f2=ggplot(df2, aes(x=time,y=N))+geom_line()+
    xlab('Time')+
     ylab(TeX('Populaiton ($N$)'))+
     ylim(c(0, 10^4))+
@@ -1073,7 +1569,7 @@ g4=ggplot(df2, aes(x=time,y=N))+geom_line()+
           axis.title.y = element_text(size = 18)
           )
 
-g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
+f4=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
         xlab('Time')+
        ylab(TeX('Trait mean ($\\bar{Z}$)'))+
       ylim(c(0, 0.6))+
@@ -1109,7 +1605,7 @@ g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
           axis.title.y = element_text(size = 18)
           )
 
- g8=ggplot(df2, aes(x=time,y=Z_var))+geom_line()+
+ f6=ggplot(df2, aes(x=time,y=Z_var))+geom_line()+
     ylab(TeX('Trait variance ($V$)'))+
     xlab('Time')+
     scale_y_continuous(labels = scientific_notation, limits=c(0, 1.e-3))+
@@ -1131,12 +1627,11 @@ g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
           axis.title.x = element_text(size = 18),
           axis.title.y = element_text(size = 18)
           )
-
-g1+g2+g3+g4+g5+g6+g7+g8+plot_layout(ncol=2, nrow=4)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
-ggsave('ER_simulations.png',width=15, height=18)
+example1=f1+f2+f3+f4+f5+f6+plot_layout(ncol=2, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulations_example1.png',width=12, height=15)
 ```
 
-```{r distibution of traits}
+```{r example 2}
 library(ggplot2)
 library(patchwork)
 library(quantreg)
@@ -1173,28 +1668,6 @@ df_rescue2=data.frame(
 summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue2))
 summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue2))
 
-g1=ggplot(df_rescue2, aes(x=as.factor(SD), y=Mean))+geom_violin() +
-  stat_summary(fun.y=median, geom="point", size=2, color="black")+
-  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
-  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
-  ylim(c(0, 0.6))+
-   theme_classic()+
-    theme(axis.text.x = element_text(size = 16),
-          axis.text.y = element_text(size = 16),
-          axis.title.x = element_text(size = 18),
-          axis.title.y = element_text(size = 18)
-          )
-g2=ggplot(df_rescue2, aes(x=as.factor(SD), y=Variance))+geom_violin() +
-  stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of enviornmental flucutuations ($\\sigma$)'))+
-  ylab(TeX('Trait variance ($V$)'))+
-  scale_y_log10(labels = scientific_notation)+
-   theme_classic()+
-    theme(axis.text.x = element_text(size = 16),
-          axis.text.y = element_text(size = 16),
-          axis.title.x = element_text(size = 18),
-          axis.title.y = element_text(size = 18)
-          )
 # Show dynamics sigma=0 vs 125
 # Add example of population dynamics where ER succeeds in all sigma
 d_test=filter(df, Lin_rescue==TRUE & SD025_rescue==TRUE &
@@ -1415,8 +1888,8 @@ g6=ggplot(df2, aes(x=time,y=Z_mean))+geom_line()+
           axis.title.y = element_text(size = 18)
           )
 
-g1+g2+g3+g4+g5+g6+g7+g8+plot_layout(ncol=2, nrow=4)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
-ggsave('ER_simulations2.png',width=15, height=18)
+g3+g4+g5+g6+g7+g8+plot_layout(ncol=2, nrow=3)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulations_example2.png',width=12, height=15)
 
 ```
 
@@ -1845,6 +2318,137 @@ ggsave('ER_simulation_Var_dynamics.png',width=9, height=12)
 
 ```
 
+```{r sensitivity analysis to see the impact of each parameter on ER in the simulations}
+library(ggplot2)
+library(patchwork)
+library(scatterPlotMatrix)
+library(regclass)
+library(latex2exp)
+
+df=read.csv('ER_model_parameter_sweep2.csv')
+
+# reconstrct df
+df1=df
+df1$sigma = 0
+df1$ER = as.numeric(df$N_Lin.N>10)
+
+df2=df
+df2$sigma = 0.25
+df2$ER = as.numeric(df$N_SD025.N>10)
+
+df3=df
+df3$sigma = 0.5
+df3$ER = as.numeric(df$N_SD050.N>10)
+
+df4=df
+df4$sigma = 0.75
+df4$ER = as.numeric(df$N_SD075.N>10)
+
+df5=df
+df5$sigma = 1.00
+df5$ER = as.numeric(df$N_SD100.N>10)
+
+df6=df
+df6$sigma = 1.25
+df6$ER = as.numeric(df$N_SD125.N>10)
+
+
+df=rbind(df1,df2,df3,df4,df5,df6)
+df=subset(df, select = c(alpha_0,beta, gamma, w, a, sigma, ER) )
+df_scale=data.frame(scale(subset(df, select = c(alpha_0,beta, gamma, w, a, sigma) )))
+df_scale$ER=df$ER
+
+
+logistic_model <- glm(ER ~ sigma+alpha_0 + beta+gamma+w+a,
+  data = df_scale,family = "binomial")
+summary(logistic_model)
+M=confusion_matrix(logistic_model)
+print(M)
+
+# ----------Use below in case to show the plots---------
+# g1=ggplot(df_scale, aes(x=sigma, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#   xlab(TeX('scaled $igma$'))+
+#   ylab('Evolutionary rescue')+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 18)
+#           )
+# 
+# g2=ggplot(df_scale, aes(x=alpha_0, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#   xlab(TeX('scaled $alpha_0$'))+
+#   ylab('Evolutionary rescue')+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 18)
+#           )
+# 
+# g3=ggplot(df_scale, aes(x=beta, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#    xlab(TeX('scaled $beta$'))+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 0)
+#           )
+# 
+# g4=ggplot(df_scale, aes(x=gamma, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#    xlab(TeX('scaled $gamma$'))+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 0)
+#           )
+# 
+# g5=ggplot(df_scale, aes(x=w, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#   xlab(TeX('scaled $w$'))+
+#    ylab('Evolutionary rescue')+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 18)
+#           )
+# g6=ggplot(df_scale, aes(x=a, y=ER)) + geom_point(alpha=point_alpha) +
+#      stat_smooth(method="glm", color="#009E73", se=FALSE, 
+#                  method.args = list(family=binomial))+
+#    xlab(TeX('scaled $a$'))+
+#    ylab('Evolutionary rescue')+
+#   scale_y_continuous(breaks=c(0, 1), labels=c('Failure', 'Success'))+
+#   theme_classic()+
+#     theme(axis.text.x = element_text(size = 12),
+#           axis.text.y = element_text(size = 12),
+#           axis.title.x = element_text(size = 18),
+#           axis.title.y = element_text(size = 0)
+#           )
+# 
+# 
+# g=g1+g2+g3+g4+g5+g6+plot_layout(ncol=3, nrow=2)+
+#     plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 20))
+#   ggsave('ER_logistic_sensitivity.png', width=9, height=6)
+
+```
+
+
 ```{r Plot SI for sensisitivity analysis again st Tf and VM}
 library(ggplot2)
 library(patchwork)
@@ -2044,6 +2648,355 @@ g1+g2+g3+plot_layout(ncol=3, nrow=1)+plot_annotation(tag_levels = "A",) & theme(
 ggsave('ER_simulation_HigherMu.png',width=15, height=6)
 ```
 
+```{r Run other parameters: samll init N}
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+salt_SD050=c(0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.6)
+salt_SD075=c(0.125, 0.1, 0.075, 0.2, 0.325, 0.3, 0.275, 0.4, 0.525, 0.5, 0.475, 0.6)
+salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+Tf=50
+# read parameters from parameter sweeop
+df=read.csv("ER_model_parameter_sweep.csv")
+
+
+
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+number_replicate=nrow(df)
+init=c(N=1000, Z_mean=0.0, Z_var=1e-4) # smaller inital population size
+Long_Dynamics=function(y0, Tf, parms, salt_stress){
+  for (salt in salt_stress){
+    times =seq(0, Tf, 0.01)
+    out =ode(y = y0, times = times, func = Oligomorphic, 
+             parms = c(parms, s=salt, mu=1e-5, sigma=1e-2))# mu=1e-4 was too huge: almost always rescued 
+    last=tail(data.frame(out),1)
+    y0=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  return(data.frame(last[2:length(last)]))
+}
+for(n in 1:number_replicate){
+  if(n%%1000==1){
+    print(n)
+  }
+   parms=c(alpha_0=alpha_0[n],
+           beta=beta[n], 
+           gamma=gamma[n], 
+           w=w[n],
+           a=a[n])
+  final_state_Linear=Long_Dynamics(init, Tf, parms, salt_Linear)
+  final_state_SD025=Long_Dynamics(init, Tf, parms, salt_SD025)
+  final_state_SD100=Long_Dynamics(init, Tf, parms, salt_SD100)
+  final_state_SD050=Long_Dynamics(init, Tf, parms, salt_SD050)
+  final_state_SD075=Long_Dynamics(init, Tf, parms, salt_SD075)
+  final_state_SD125=Long_Dynamics(init, Tf, parms, salt_SD125)
+  ans=c(
+       parms,
+        N_Lin=final_state_Linear[1],
+         Mean_Lin=final_state_Linear[2],
+         Var_Lin=final_state_Linear[3],
+        N_SD025=final_state_SD025[1],
+         Mean_SD025=final_state_SD025[2],
+         Var_SD025=final_state_SD025[3],
+        N_SD050=final_state_SD050[1],
+         Mean_SD050=final_state_SD050[2],
+         Var_SD050=final_state_SD050[3],
+        N_SD075=final_state_SD075[1],
+         Mean_SD075=final_state_SD075[2],
+         Var_SD075=final_state_SD075[3],
+          N_SD100=final_state_SD100[1],
+         Mean_SD100=final_state_SD100[2],
+         Var_SD100=final_state_SD100[3],
+         N_SD125=final_state_SD125[1],
+         Mean_SD125=final_state_SD125[2],
+         Var_SD125=final_state_SD125[3]
+                  )
+  if(n==1){
+   df_new=data.frame(ans)
+  }
+  else{
+    df_new=rbind(df_new, ans)
+  }
+}
+write.csv(df_new, "ER_model_parameter_sweep_smallerN.csv")
+```
+
+```{r Run other parameters: samll init V}
+salt_Linear=seq(0.05,0.6, 0.05)
+salt_SD025=c(0.075, 0.1, 0.125, 0.2, 0.275, 0.3, 0.325, 0.4, 0.475, 0.50, 0.525, 0.6)
+salt_SD050=c(0.1, 0.1, 0.1, 0.2, 0.3, 0.3, 0.3, 0.4, 0.5, 0.5, 0.5, 0.6)
+salt_SD075=c(0.125, 0.1, 0.075, 0.2, 0.325, 0.3, 0.275, 0.4, 0.525, 0.5, 0.475, 0.6)
+salt_SD100=c(0.15, 0.1, 0.05, 0.2, 0.35, 0.3, 0.25, 0.4, 0.55, 0.50, 0.45, 0.6)
+salt_SD125=c(0.175, 0.1, 0.025, 0.2, 0.375, 0.3, 0.225, 0.4, 0.575, 0.5, 0.425, 0.6)
+Tf=50
+# read parameters from parameter sweeop
+df=read.csv("ER_model_parameter_sweep.csv")
+
+
+alpha_0=df$alpha_0
+beta=df$beta
+gamma=df$gamma
+w=df$w
+a=df$a
+number_replicate=nrow(df)
+init=c(N=10000, Z_mean=0.0, Z_var=1e-5) # smaller initial genetic variance
+Long_Dynamics=function(y0, Tf, parms, salt_stress){
+  for (salt in salt_stress){
+    times =seq(0, Tf, 0.01)
+    out =ode(y = y0, times = times, func = Oligomorphic, 
+             parms = c(parms, s=salt, mu=1e-5, sigma=1e-2))# mu=1e-4 was too huge: almost always rescued 
+    last=tail(data.frame(out),1)
+    y0=c(N=last$N, Z_mean=last$Z_mean, Z_var=last$Z_var)
+  }
+  return(data.frame(last[2:length(last)]))
+}
+for(n in 1:number_replicate){
+  if(n%%1000==1){
+    print(n)
+  }
+   parms=c(alpha_0=alpha_0[n],
+           beta=beta[n], 
+           gamma=gamma[n], 
+           w=w[n],
+           a=a[n])
+  final_state_Linear=Long_Dynamics(init, Tf, parms, salt_Linear)
+  final_state_SD025=Long_Dynamics(init, Tf, parms, salt_SD025)
+  final_state_SD100=Long_Dynamics(init, Tf, parms, salt_SD100)
+  final_state_SD050=Long_Dynamics(init, Tf, parms, salt_SD050)
+  final_state_SD075=Long_Dynamics(init, Tf, parms, salt_SD075)
+  final_state_SD125=Long_Dynamics(init, Tf, parms, salt_SD125)
+  ans=c(
+       parms,
+        N_Lin=final_state_Linear[1],
+         Mean_Lin=final_state_Linear[2],
+         Var_Lin=final_state_Linear[3],
+        N_SD025=final_state_SD025[1],
+         Mean_SD025=final_state_SD025[2],
+         Var_SD025=final_state_SD025[3],
+        N_SD050=final_state_SD050[1],
+         Mean_SD050=final_state_SD050[2],
+         Var_SD050=final_state_SD050[3],
+        N_SD075=final_state_SD075[1],
+         Mean_SD075=final_state_SD075[2],
+         Var_SD075=final_state_SD075[3],
+          N_SD100=final_state_SD100[1],
+         Mean_SD100=final_state_SD100[2],
+         Var_SD100=final_state_SD100[3],
+         N_SD125=final_state_SD125[1],
+         Mean_SD125=final_state_SD125[2],
+         Var_SD125=final_state_SD125[3]
+                  )
+  if(n==1){
+   df_new=data.frame(ans)
+  }
+  else{
+    df_new=rbind(df_new, ans)
+  }
+}
+write.csv(df_new, "ER_model_parameter_sweep_smallerV.csv")
+```
+
+```{r Plot SI for sensisitivity analysis against initial N and V}
+library(ggplot2)
+library(patchwork)
+library(nclbayes)
+library(latex2exp)
+library(dplyr)
+library(deSolve)
+library(quantreg)
+
+# Small init N
+df=read.csv("ER_model_parameter_sweep_smallerN.csv")
+threshold=10 # the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
+
+g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+plot_layout(ncol=3, nrow=1)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_SmallerN.png',width=15, height=6)
+
+
+##Samll V
+df=read.csv("ER_model_parameter_sweep_smallerV.csv")
+threshold=10 # the result seems to be robust
+df$Lin_rescue=df$N_Lin.N>threshold
+df$SD025_rescue=df$N_SD025.N>threshold
+df$SD050_rescue=df$N_SD050.N>threshold
+df$SD075_rescue=df$N_SD075.N>threshold
+df$SD100_rescue=df$N_SD100.N>threshold
+df$SD125_rescue=df$N_SD125.N>threshold
+
+HDI_Lin=hdiBeta(p = 0.95, sum(df$N_Lin.N>threshold)+1, nrow(df)-sum(df$N_Lin.N>threshold)+1)
+HDI_025=hdiBeta(p = 0.95, sum(df$N_SD025.N>threshold)+1, nrow(df)-sum(df$N_SD025.N>threshold)+1)
+HDI_050=hdiBeta(p = 0.95, sum(df$N_SD050.N>threshold)+1, nrow(df)-sum(df$N_SD050.N>threshold)+1)
+HDI_075=hdiBeta(p = 0.95, sum(df$N_SD075.N>threshold)+1, nrow(df)-sum(df$N_SD075.N>threshold)+1)
+HDI_100=hdiBeta(p = 0.95, sum(df$N_SD100.N>threshold)+1, nrow(df)-sum(df$N_SD100.N>threshold)+1)
+HDI_125=hdiBeta(p = 0.95, sum(df$N_SD125.N>threshold)+1, nrow(df)-sum(df$N_SD125.N>threshold)+1)
+
+d_plot=data.frame(
+  SD=c(0,0.025,0.05, 0.075, 0.1, 0.125),
+  Probability = c(sum(df$N_Lin.N>threshold)/nrow(df), sum(df$N_SD025.N>threshold)/nrow(df),
+                  sum(df$N_SD050.N>threshold)/nrow(df), sum(df$N_SD075.N>threshold)/nrow(df),
+                  sum(df$N_SD100.N>threshold)/nrow(df), sum(df$N_SD125.N>threshold)/nrow(df)),
+  Low=c(HDI_Lin[1], HDI_025[1], HDI_050[1], HDI_075[1], HDI_100[1], HDI_125[1]),
+  High=c(HDI_Lin[2], HDI_025[2], HDI_050[2], HDI_075[2], HDI_100[2], HDI_125[2])
+)
+
+g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
+  geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
+  ylab('Fraction of evolutionary rescue')+
+  #xlim(c(-0.05, 0.13))+
+  ylim(c(0, 1.05))+
+  #scale_y_continuous(breaks=c(0, 0.5, 1.0))+
+ #geom_smooth(method = "glm", 
+#    method.args = list(family = "binomial"), 
+#    se = FALSE, color="#56B4E9") +
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18),
+          legend.position="none"
+          )
+df_rescue=data.frame(
+  SD=c(rep(0, nrow(df[df$Lin_rescue==TRUE,])),
+          rep(0.025, nrow(df[df$SD025_rescue==TRUE,])),
+          rep(0.05, nrow(df[df$SD050_rescue==TRUE,])),
+          rep(0.075, nrow(df[df$SD075_rescue==TRUE,])),
+          rep(0.1, nrow(df[df$SD100_rescue==TRUE,])),
+          rep(0.125, nrow(df[df$SD125_rescue==TRUE,]))
+  ),
+  Mean=c(df[df$Lin_rescue==TRUE,]$Mean_Lin.Z_mean,
+         df[df$SD025_rescue==TRUE,]$Mean_SD025.Z_mean,
+          df[df$SD050_rescue==TRUE,]$Mean_SD050.Z_mean,
+          df[df$SD075_rescue==TRUE,]$Mean_SD075.Z_mean,
+         df[df$SD100_rescue==TRUE,]$Mean_SD100.Z_mean,
+          df[df$SD125_rescue==TRUE,]$Mean_SD125.Z_mean),
+  Variance=c(df[df$Lin_rescue==TRUE,]$Var_Lin.Z_var,
+         df[df$SD025_rescue==TRUE,]$Var_SD025.Z_var,
+         df[df$SD050_rescue==TRUE,]$Var_SD050.Z_var,
+         df[df$SD075_rescue==TRUE,]$Var_SD075.Z_var,
+         df[df$SD100_rescue==TRUE,]$Var_SD100.Z_var,
+         df[df$SD125_rescue==TRUE,]$Var_SD125.Z_var)
+  )
+#quantile regression
+summary(rq(formula = Mean ~ SD, tau =  0.5, data = df_rescue))
+summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
+
+g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait mean ($\\bar{Z}$)'))+
+  ylim(c(0, 0.6))+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
+  stat_summary(fun.y=median, geom="point", size=2, color="black")+
+   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  ylab(TeX('Trait variance ($V$)'))+
+  scale_y_log10(labels = scientific_notation)+
+   theme_classic()+
+    theme(axis.text.x = element_text(size = 16),
+          axis.text.y = element_text(size = 16),
+          axis.title.x = element_text(size = 18),
+          axis.title.y = element_text(size = 18)
+          )
+
+g1+g2+g3+plot_layout(ncol=3, nrow=1)+plot_annotation(tag_levels = "A",) & theme(plot.tag = element_text(size = 24))
+ggsave('ER_simulation_SmallerV.png',width=15, height=6)
+```
 
 ```{r Sensitivigty against threshold of extinction}
 library(ggplot2)
