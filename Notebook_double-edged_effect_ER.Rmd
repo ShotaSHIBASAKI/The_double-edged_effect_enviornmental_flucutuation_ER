@@ -64,13 +64,12 @@ nacl_ret=c()
 #delta_AIC=c()
 for (i in 1:length(week_list)){
   week=week_list[i]
-  print(week)
   for (j in 1:length(id_list)){
     id=id_list[j]
     condition=df[df$Week==week & df$ID==id & df$Day==0,]$Condition
     #We can estimate the growth rate from the exponential curve
     d=df[df$Week==week& df$ID==id, ]
-    d_new=data.frame(Count=c(d$Cunt1, d$Count2, d$Count3), Day=d$Day) # use all samples
+    d_new=data.frame(Count=c(d$Count1, d$Count2, d$Count3), Day=d$Day) # use all samples
         #--------------------------------------------
         # We perform exponential fitting because AIC suggested that
         # an exponential function is more predictable than a logistic growth model
@@ -95,14 +94,14 @@ for (i in 1:length(week_list)){
         #----------------------------------------------------
    model=nls(Count ~ const*exp(Day*mu), data=d_new, 
        start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
-  mu=summary(model)$coefficients[1]
+  mu=summary(model)$coefficients[2]
    
-    #week_ret=c(week_ret, week)
-    #id_ret=c(id_ret, id)
-    #cond_ret=c(cond_ret, condition)
-    #mu_ret=c(mu_ret, mu)
+    week_ret=c(week_ret, week)
+    id_ret=c(id_ret, id)
+    cond_ret=c(cond_ret, condition)
+    mu_ret=c(mu_ret, mu)
     #a_ret=c(a_ret, a)
-    #nacl_ret=c(nacl_ret, df_cond[df_cond$Condition==condition & df_cond$Week==week,]$NaCl)
+    nacl_ret=c(nacl_ret, df_cond[df_cond$Condition==condition & df_cond$Week==week,]$NaCl)
     
   }
 }
@@ -110,7 +109,7 @@ data_parm=data.frame(Week=week_ret,
                      ID=id_ret,
                      Condition=cond_ret,
                      Mu=mu_ret,
-                     A=a_ret, 
+                     #A=a_ret, 
                      NaCl=nacl_ret)
 
 data_lin=data_parm[data_parm$Condition=='Linear', ]
@@ -134,7 +133,7 @@ for(salt in salinity){
    }else{
     W=wilcox_test(Mu~Condition, data=d[d$NaCl==salt, ], "less")
     w_effect=wilcox_effsize(Mu~Condition, data=d[d$NaCl==salt, ], "less")$effsize
-     alt_list=append(alt_list, "less")
+   alt_list=append(alt_list, "less")
   }
   W_list=append(W_list, W$statistic)
   p_list=append(p_list, W$p)
@@ -299,7 +298,7 @@ print(q)
 
 xtable(df_stat)
 ```
-Below, we calculate the growth rate from the population dynamics
+Below, we calculate the growth rate and generation time from the population dynamics
 
 ```{r generation time}
 df=read.csv("CellCount.csv")
@@ -1389,7 +1388,7 @@ g4=ggplot(df_rescue2, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g5=ggplot(df_rescue2, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of enviornmental flucutuations ($\\sigma$)'))+
+   xlab(TeX('Amplitude of enviornmental flucutuation ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -2528,7 +2527,7 @@ summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
 
 g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -2539,7 +2538,7 @@ g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -2623,7 +2622,7 @@ summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
 
 g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -2634,7 +2633,7 @@ g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -2878,7 +2877,7 @@ summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
 
 g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -2889,7 +2888,7 @@ g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -2973,7 +2972,7 @@ summary(rq(formula = Variance ~ SD, tau =  0.5, data = df_rescue))
 
 g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -2984,7 +2983,7 @@ g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-   xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+   xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -3034,7 +3033,7 @@ d_plot=data.frame(
 
 g1=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
   geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
-  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab('Fraction of evolutionary rescue')+
   #xlim(c(-0.05, 0.13))+
   ylim(c(0, 1.05))+
@@ -3073,7 +3072,7 @@ df_rescue=data.frame(
 
 g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+    xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -3084,7 +3083,7 @@ g2=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g3=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-     xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+     xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -3159,7 +3158,7 @@ df_rescue=data.frame(
 
 g5=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-     xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+     xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -3170,7 +3169,7 @@ g5=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g6=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+    xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
@@ -3206,7 +3205,7 @@ d_plot=data.frame(
 
 g7=ggplot(d_plot, aes(x=factor(SD), y=Probability))+geom_point(size=3)+
   geom_errorbar(aes(ymin=Low, ymax=High), width=.5)+
-  xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+  xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab('Fraction of evolutionary rescue')+
   #xlim(c(-0.05, 0.13))+
   ylim(c(0, 1.05))+
@@ -3245,7 +3244,7 @@ df_rescue=data.frame(
 
 g8=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+    xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait mean ($\\bar{Z}$)'))+
   ylim(c(0, 0.6))+
    theme_classic()+
@@ -3256,7 +3255,7 @@ g8=ggplot(df_rescue, aes(x=as.factor(SD), y=Mean))+geom_violin() +
           )
 g9=ggplot(df_rescue, aes(x=as.factor(SD), y=Variance))+geom_violin() +
   stat_summary(fun.y=median, geom="point", size=2, color="black")+
-    xlab(TeX('Amplitude of environmental fluctuations  ($\\sigma$)'))+
+    xlab(TeX('Amplitude of environmental fluctuation  ($\\sigma$)'))+
   ylab(TeX('Trait variance ($V$)'))+
   scale_y_log10(labels = scientific_notation)+
    theme_classic()+
