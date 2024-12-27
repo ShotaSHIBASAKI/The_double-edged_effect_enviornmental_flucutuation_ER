@@ -91,6 +91,7 @@ for (i in 1:length(week_list)){
         # model2=nls(Count ~ const*exp(Day*mu), data=d_new, 
         #     start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
         #delta_AIC=c(delta_AIC, AIC(model2)- AIC(model1))
+        #hist(delta_AIC, xlab='delta AIC', ylab='Count')
         #----------------------------------------------------
    model=nls(Count ~ const*exp(Day*mu), data=d_new, 
        start=c(const=df[df$Week==week & df$ID==id & df$Day==0,]$Mean, mu=0.6))
